@@ -1,0 +1,6 @@
+{
+  "name": "Excel Tool MVP",
+  "description": "Hệ thống nội bộ xử lý số liệu Excel cho kế toán và quảng cáo",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
