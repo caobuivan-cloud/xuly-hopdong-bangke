@@ -1,6 +1,6 @@
 # Feature Tasks: master-data-search
 
-> **Trạng thái**: 🔄 Đang thực hiện
+> **Trạng thái**: ✅ Hoàn thành
 > **Liên kết plan**: `FEATURE_PLAN.md`
 > **Ngày tạo**: 2026-06-19
 
@@ -24,7 +24,7 @@
   - `filteredCustomers`: search trên `tenKhach`, `maKhach`.
   - `filteredProducts`: search trên `keyword`, `maVuViec`, `tenSanPham`, `tkDoanhThu`, `thueSuat`. Chú ý ép kiểu `String(p.thueSuat ?? '')` trước khi strip.
   <!-- Sửa theo EFR-01: Explicit list các trường cần search và safe casting. -->
-- [/] Task 1.Final: 🧪 Test & Verify Phase 1 (Kiểm tra bằng cách hardcode tạm state để xem filter có hoạt động không - có thể gộp test với Phase 2).
+- [x] Task 1.Final: 🧪 Test & Verify Phase 1 (Kiểm tra bằng cách hardcode tạm state để xem filter có hoạt động không - có thể gộp test với Phase 2).
 
 ## Phase 2: Cập nhật UI giao diện
 
@@ -33,7 +33,7 @@
 - [x] Task 2.1: Thêm ô `<input>` tìm kiếm với icon Search ở phần header của bảng Master 1. Thay thế vòng lặp `departments.map` thành `filteredDepartments.map`.
 - [x] Task 2.2: Thêm ô tìm kiếm tương tự cho Master 2, thay thế vòng lặp hiển thị.
 - [x] Task 2.3: Thêm ô tìm kiếm tương tự cho Master 3, thay thế vòng lặp hiển thị.
-- [/] Task 2.Final: 🧪 Test & Verify Phase 2 (Chạy `npm run dev`, gõ thử trên giao diện và xác nhận tính năng lọc hoạt động đúng, UI không bị vỡ).
+- [x] Task 2.Final: 🧪 Test & Verify Phase 2 (Chạy `npm run dev`, gõ thử trên giao diện và xác nhận tính năng lọc hoạt động đúng, UI không bị vỡ).
 
 ---
 

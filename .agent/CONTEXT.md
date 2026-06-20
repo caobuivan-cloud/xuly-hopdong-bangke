@@ -38,6 +38,12 @@
 | [changelog/CHANGELOG-BE.md](./changelog/CHANGELOG-BE.md) | Thay đổi backend, API, service, worker |
 | [changelog/CHANGELOG-DB.md](./changelog/CHANGELOG-DB.md) | Thay đổi schema, migration, query, dữ liệu |
 
+### Testing
+| File | Mô tả |
+|------|------|
+| [testing/master-data-search.md](./testing/master-data-search.md) | Kịch bản kiểm thử tính năng tìm kiếm Master Data |
+| [testing/excel-import-export-refactor.md](./testing/excel-import-export-refactor.md) | Kịch bản kiểm thử bộ nạp & xuất Excel FAST |
+
 ### Agent Skills
 | Skill | Mô tả |
 |------|------|
