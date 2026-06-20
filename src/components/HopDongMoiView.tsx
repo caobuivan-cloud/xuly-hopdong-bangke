@@ -18,7 +18,7 @@ import { buildFastImportRows } from '../utils/fastImport';
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
 } from '../utils/businessLogic';
-import { dbService } from '../services/dbService';
+import { dbService, writeActionLogToSheet } from '../services/dbService';
 
 interface HopDongMoiViewProps {
   id?: string;
@@ -119,6 +119,15 @@ export default function HopDongMoiView({
     if (!confirmResetProcessedData()) return;
     setter(files);
     setProcessedRows(null);
+    if (files.length > 0) {
+      const fileNames = files.map(f => f.fileName).join(', ');
+      const isFast = setter === setFileFastList;
+      const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng mới";
+      writeActionLogToSheet(
+        `Tải file ${typeStr}`,
+        `Tải lên tệp: ${fileNames}`
+      );
+    }
   };
 
   const removeUploadedFile = (
@@ -126,7 +135,18 @@ export default function HopDongMoiView({
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
     if (!confirmResetProcessedData()) return;
-    setter((files) => files.filter((_, fileIndex) => fileIndex !== index));
+    setter((files) => {
+      const removedFile = files[index];
+      if (removedFile) {
+        const isFast = setter === setFileFastList;
+        const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng mới";
+        writeActionLogToSheet(
+          `Xóa file ${typeStr}`,
+          `Xóa tệp: ${removedFile.fileName}`
+        );
+      }
+      return files.filter((_, fileIndex) => fileIndex !== index);
+    });
     setProcessedRows(null);
   };
 
@@ -376,6 +396,10 @@ export default function HopDongMoiView({
 
         setProcessedRows(mapped);
         setCurrentPage(1);
+        writeActionLogToSheet(
+          'Xử lý hợp đồng mới',
+          `Xử lý thành công ${mapped.length} dòng dữ liệu.`
+        );
       } catch (err: any) {
         setErrorMessage(err?.message || 'Có lỗi xảy ra khi xử lý dữ liệu.');
       } finally {
@@ -387,6 +411,8 @@ export default function HopDongMoiView({
   // Inline column updates
   const handleUpdateField = (rowId: string, field: string, value: any) => {
     if (!processedRows) return;
+    const row = processedRows.find(r => r.id === rowId);
+    const oldVal = row ? row[field] : '';
     const updated = processedRows.map(row => {
       if (row.id !== rowId) return row;
 
@@ -452,6 +478,15 @@ export default function HopDongMoiView({
       return newRow;
     });
     setProcessedRows(updated);
+
+    if (row && String(oldVal) !== String(value)) {
+      const fieldLabel = FIELD_LABELS[field] || field;
+      const docCode = row.maHopDong || row.tenHopDong || `Dòng ${rowId}`;
+      writeActionLogToSheet(
+        'Sửa dòng hợp đồng mới',
+        `Thay đổi trường "${fieldLabel}" của hợp đồng "${docCode}" từ "${oldVal}" sang "${value}"`
+      );
+    }
   };
 
   // Autocomplete option engine
@@ -617,6 +652,11 @@ export default function HopDongMoiView({
     exportToExcel(
       [{ sheetName: 'HĐ Mới Fast Import', data: dataExcel }],
       `Enriched_HopDongMoi_36Cols_${new Date().toISOString().split('T')[0]}.xlsx`
+    );
+
+    writeActionLogToSheet(
+      'Xuất Excel hợp đồng mới',
+      `Xuất thành công tệp Excel chứa ${filteredRows.length} dòng.`
     );
   };
 

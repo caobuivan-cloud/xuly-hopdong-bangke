@@ -34,7 +34,8 @@ import {
   hasValidGoogleSheetsUrl,
   pullAllFromGoogleSheets,
   pushAllToGoogleSheets,
-  GOOGLE_SHEETS_SCRIPT_URL
+  GOOGLE_SHEETS_SCRIPT_URL,
+  writeActionLogToSheet
 } from './services/dbService';
 
 const DEFAULT_RULES = [
@@ -52,6 +53,9 @@ const DEFAULT_CONFIG: ContractSettings = {
   contractSuffix: 'AD',
   contractNameSeparator: '/',
   exceptionRules: DEFAULT_RULES,
+  logsEnabled: true,
+  userName: 'Kế toán viên',
+  googleSheetsUrl: 'https://script.google.com/macros/s/AKfycbx6l4gM4WbIxaoCJDMpztCpzzIuCiZ7m38wEZdSMI2IjLPNv4bhCs7n1tzgQafomSER/exec',
 };
 
 export default function App() {
@@ -65,6 +69,10 @@ export default function App() {
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
+        if (!parsed.googleSheetsUrl || parsed.googleSheetsUrl.trim() === '') {
+          parsed.googleSheetsUrl = 'https://script.google.com/macros/s/AKfycbx6l4gM4WbIxaoCJDMpztCpzzIuCiZ7m38wEZdSMI2IjLPNv4bhCs7n1tzgQafomSER/exec';
+          localStorage.setItem('app_contract_settings', JSON.stringify(parsed));
+        }
         return {
           ...DEFAULT_CONFIG,
           ...parsed,
@@ -73,7 +81,9 @@ export default function App() {
         return DEFAULT_CONFIG;
       }
     }
-    return DEFAULT_CONFIG;
+    const initConfig = { ...DEFAULT_CONFIG };
+    localStorage.setItem('app_contract_settings', JSON.stringify(initConfig));
+    return initConfig;
   });
 
   // Google Sheets Sync State
@@ -83,6 +93,11 @@ export default function App() {
   const [lastSynced, setLastSynced] = useState<string | null>(() => {
     return localStorage.getItem('google_sheets_last_synced');
   });
+
+  // Ghi nhận log khi khởi động ứng dụng
+  useEffect(() => {
+    writeActionLogToSheet("Khởi động ứng dụng", "Đã mở trang đối chiếu Hợp đồng - Bảng kê");
+  }, []);
 
   // Tự động tải ngầm dữ liệu từ Google Sheets khi mở app
   useEffect(() => {
@@ -136,9 +151,11 @@ export default function App() {
       
       setSyncSuccessMsg(`Đồng bộ thành công! Đã nạp ${stats.customersCount} khách hàng, ${stats.departmentsCount} bộ phận, ${stats.productsCount} sản phẩm.`);
       setTimeout(() => setSyncSuccessMsg(null), 5000);
+      writeActionLogToSheet("Đồng bộ tải (Pull)", `Đồng bộ thủ công thành công từ Google Sheets: Nạp ${stats.customersCount} khách hàng, ${stats.departmentsCount} bộ phận, ${stats.productsCount} sản phẩm.`);
       return stats;
     } catch (err: any) {
       setSyncError(err?.message || "Lỗi khi tải dữ liệu từ Sheet");
+      writeActionLogToSheet("Đồng bộ tải (Pull) thất bại", `Lỗi: ${err?.message || "Không rõ nguyên nhân"}`);
       throw err;
     } finally {
       setIsSyncing(false);
@@ -156,8 +173,10 @@ export default function App() {
       localStorage.setItem('google_sheets_last_synced', timeStr);
       setSyncSuccessMsg(`Đã đẩy toàn bộ dữ liệu cấu hình và master data lên Google Sheet thành công!`);
       setTimeout(() => setSyncSuccessMsg(null), 5000);
+      writeActionLogToSheet("Đồng bộ gửi (Push)", "Đẩy thành công cấu hình và master data hiện tại lên Google Sheets.");
     } catch (err: any) {
       setSyncError(err?.message || "Lỗi khi ghi dữ liệu lên Sheet");
+      writeActionLogToSheet("Đồng bộ gửi (Push) thất bại", `Lỗi: ${err?.message || "Không rõ nguyên nhân"}`);
       throw err;
     } finally {
       setIsSyncing(false);
@@ -167,6 +186,7 @@ export default function App() {
   const handleSaveConfig = (updated: ContractSettings) => {
     setConfig(updated);
     localStorage.setItem('app_contract_settings', JSON.stringify(updated));
+    writeActionLogToSheet("Lưu cấu hình", "Cập nhật tham số chung của hệ thống.");
     // Tự động đẩy lên Google Sheet nếu có URL cấu hình
     if (hasValidGoogleSheetsUrl()) {
       handleManualPush(updated).catch(err => {

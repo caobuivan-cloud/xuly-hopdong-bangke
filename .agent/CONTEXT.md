@@ -26,23 +26,18 @@
 | [KNOWLEDGE_BASE.md](./KNOWLEDGE_BASE.md) | Quyết định kiến trúc và lý do chiến lược |
 | [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) | Snapshot cấu trúc thư mục, entry points, services và commands |
 
-### Architecture
-| File | Mô tả |
-|------|------|
-| [architecture/MASTER.md](./architecture/MASTER.md) | Kiến trúc tổng thể và các boundary chính |
-
 ### Changelog
 | File | Mô tả |
 |------|------|
 | [changelog/CHANGELOG-FE.md](./changelog/CHANGELOG-FE.md) | Thay đổi frontend, UI, UX, client-side flow |
-| [changelog/CHANGELOG-BE.md](./changelog/CHANGELOG-BE.md) | Thay đổi backend, API, service, worker |
-| [changelog/CHANGELOG-DB.md](./changelog/CHANGELOG-DB.md) | Thay đổi schema, migration, query, dữ liệu |
 
 ### Testing
 | File | Mô tả |
 |------|------|
 | [testing/master-data-search.md](./testing/master-data-search.md) | Kịch bản kiểm thử tính năng tìm kiếm Master Data |
 | [testing/excel-import-export-refactor.md](./testing/excel-import-export-refactor.md) | Kịch bản kiểm thử bộ nạp & xuất Excel FAST |
+| [testing/google-sheets-sync.md](./testing/google-sheets-sync.md) | Kịch bản kiểm thử tích hợp đồng bộ dữ liệu Google Sheets |
+| [testing/activity-logging.md](./testing/activity-logging.md) | Kịch bản kiểm thử ghi nhật ký hoạt động người dùng |
 
 ### Agent Skills
 | Skill | Mô tả |

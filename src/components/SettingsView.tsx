@@ -58,6 +58,11 @@ export default function SettingsView({
   const [hopDongMoiHeaders, setHopDongMoiHeaders] = useState(config.requiredHeadersHopDongMoi.join(', '));
   const [bangKeHeaders, setBangKeHeaders] = useState(config.requiredHeadersBangKe.join(', '));
   
+  // Activity Logging config states
+  const [logsEnabled, setLogsEnabled] = useState(config.logsEnabled !== false);
+  const [userName, setUserName] = useState(config.userName || 'Kế toán viên');
+  const [googleSheetsUrl, setGoogleSheetsUrlState] = useState(config.googleSheetsUrl || '');
+  
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Exceptions rules states
@@ -144,7 +149,16 @@ export default function SettingsView({
     if (config.exceptionRules) {
       setExceptionRules(config.exceptionRules);
     }
-  }, [config.exceptionRules]);
+    if (config.logsEnabled !== undefined) {
+      setLogsEnabled(config.logsEnabled);
+    }
+    if (config.userName !== undefined) {
+      setUserName(config.userName);
+    }
+    if (config.googleSheetsUrl !== undefined) {
+      setGoogleSheetsUrlState(config.googleSheetsUrl);
+    }
+  }, [config]);
 
   // Computed filtered arrays for Master search (client-side, covers all displayed fields except stt)
   const normalizedDeptQuery = stripVietnameseDiacritics(searchTermDept);
@@ -186,6 +200,9 @@ export default function SettingsView({
       contractSuffix,
       contractNameSeparator,
       exceptionRules,
+      logsEnabled,
+      userName,
+      googleSheetsUrl,
     });
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -226,6 +243,9 @@ export default function SettingsView({
       contractSuffix,
       contractNameSeparator,
       exceptionRules: updatedRules,
+      logsEnabled,
+      userName,
+      googleSheetsUrl,
     });
   };
 
@@ -249,6 +269,9 @@ export default function SettingsView({
       contractSuffix,
       contractNameSeparator,
       exceptionRules: updated,
+      logsEnabled,
+      userName,
+      googleSheetsUrl,
     });
   };
 
@@ -307,6 +330,9 @@ export default function SettingsView({
             contractSuffix,
             contractNameSeparator,
             exceptionRules,
+            logsEnabled,
+            userName,
+            googleSheetsUrl,
           }).then(() => {
             setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã tự động đồng bộ lên Google Sheets." }));
           }).catch(err => {
@@ -348,6 +374,9 @@ export default function SettingsView({
             contractSuffix,
             contractNameSeparator,
             exceptionRules,
+            logsEnabled,
+            userName,
+            googleSheetsUrl,
           }).then(() => {
             setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã tự động đồng bộ lên Google Sheets." }));
           }).catch(err => {
@@ -393,6 +422,9 @@ export default function SettingsView({
             contractSuffix,
             contractNameSeparator,
             exceptionRules,
+            logsEnabled,
+            userName,
+            googleSheetsUrl,
           }).then(() => {
             setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã tự động đồng bộ lên Google Sheets." }));
           }).catch(err => {
@@ -443,6 +475,9 @@ export default function SettingsView({
         contractSuffix,
         contractNameSeparator,
         exceptionRules,
+        logsEnabled,
+        userName,
+        googleSheetsUrl,
       }).then(() => {
         setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã cập nhật lên Google Sheets." }));
       }).catch(err => {
@@ -587,6 +622,7 @@ export default function SettingsView({
                 </div>
               </div>
             </div>
+
 
             <div className="flex items-center justify-between pt-4 border-t border-slate-100">
               {saveSuccess ? (

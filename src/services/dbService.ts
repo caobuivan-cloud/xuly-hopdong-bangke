@@ -8,6 +8,7 @@
  * - Chịu trách nhiệm: 
  *   1. Định nghĩa và triển khai dịch vụ lưu trữ Master Data cục bộ.
  *   2. Cung cấp API tích hợp đồng bộ hai chiều bất đồng bộ (batch sync) với Google Sheets Web App.
+ *   3. Cung cấp API ghi nhận nhật ký hoạt động (Activity Log) bất đồng bộ phi tuần tự (fire-and-forget) sang Google Sheets Web App.
  * - Không chịu trách nhiệm: 
  *   1. Quản lý UI loading, thông tin trạng thái đồng bộ, hoặc parse file Excel thô.
  * - Ràng buộc (Invariant):
@@ -103,18 +104,35 @@ export const dbService: IMasterDataService = new LocalStorageMasterDataService()
 // GOOGLE SHEETS SYNC SERVICES
 // =========================================================================
 
-// Người dùng cấu hình URL Apps Script Web App đã deploy tại đây:
+// Người dùng cấu hình URL Apps Script Web App đã deploy tại đây (mặc định ban đầu):
 export const GOOGLE_SHEETS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx6l4gM4WbIxaoCJDMpztCpzzIuCiZ7m38wEZdSMI2IjLPNv4bhCs7n1tzgQafomSER/exec";
+
+/**
+ * Lấy URL Google Sheets Script hiện tại (ưu tiên từ config lưu trong localStorage)
+ */
+export function getGoogleSheetsUrl(): string {
+  const raw = localStorage.getItem('app_contract_settings');
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.googleSheetsUrl && typeof parsed.googleSheetsUrl === 'string' && parsed.googleSheetsUrl.trim().startsWith('http')) {
+        return parsed.googleSheetsUrl.trim();
+      }
+    } catch (e) {}
+  }
+  return GOOGLE_SHEETS_SCRIPT_URL;
+}
 
 /**
  * Kiểm tra xem URL Google Sheets đã được cấu hình hợp lệ hay chưa
  */
 export function hasValidGoogleSheetsUrl(): boolean {
+  const url = getGoogleSheetsUrl();
   return (
-    typeof GOOGLE_SHEETS_SCRIPT_URL === 'string' &&
-    GOOGLE_SHEETS_SCRIPT_URL.trim() !== '' &&
-    GOOGLE_SHEETS_SCRIPT_URL.startsWith('http') &&
-    !GOOGLE_SHEETS_SCRIPT_URL.includes('_example')
+    typeof url === 'string' &&
+    url.trim() !== '' &&
+    url.startsWith('http') &&
+    !url.includes('_example')
   );
 }
 
@@ -129,11 +147,13 @@ export async function pullAllFromGoogleSheets(): Promise<{
   configUpdated: boolean;
 }> {
   if (!hasValidGoogleSheetsUrl()) {
-    throw new Error("Google Sheets Apps Script URL chưa được cấu hình. Vui lòng cập nhật URL thật trong file dbService.ts.");
+    throw new Error("Google Sheets Apps Script URL chưa được cấu hình. Vui lòng cập nhật URL hợp lệ.");
   }
 
+  const scriptUrl = getGoogleSheetsUrl();
+
   // Gọi API lấy dữ liệu từ Google Sheets
-  const response = await fetch(`${GOOGLE_SHEETS_SCRIPT_URL}?action=read_all`, {
+  const response = await fetch(`${scriptUrl}?action=read_all`, {
     method: 'GET',
     mode: 'cors',
     headers: {
@@ -228,8 +248,10 @@ export async function pullAllFromGoogleSheets(): Promise<{
  */
 export async function pushAllToGoogleSheets(currentConfig: any): Promise<void> {
   if (!hasValidGoogleSheetsUrl()) {
-    throw new Error("Google Sheets Apps Script URL chưa được cấu hình. Vui lòng cập nhật URL thật trong file dbService.ts.");
+    throw new Error("Google Sheets Apps Script URL chưa được cấu hình. Vui lòng cập nhật URL hợp lệ.");
   }
+
+  const scriptUrl = getGoogleSheetsUrl();
 
   // Lấy dữ liệu Master Data hiện tại từ Local
   const departments = await dbService.getDepartments();
@@ -248,7 +270,7 @@ export async function pushAllToGoogleSheets(currentConfig: any): Promise<void> {
     products
   };
 
-  const response = await fetch(GOOGLE_SHEETS_SCRIPT_URL, {
+  const response = await fetch(scriptUrl, {
     method: 'POST',
     mode: 'cors',
     headers: {
@@ -264,6 +286,57 @@ export async function pushAllToGoogleSheets(currentConfig: any): Promise<void> {
   const result = await response.json();
   if (!result.success) {
     throw new Error(result.error || "Không thể lưu dữ liệu lên Google Sheets.");
+  }
+}
+
+/**
+ * Ghi log hoạt động người dùng lên Google Sheet (bất đồng bộ phi tuần tự, no-cors).
+ */
+export async function writeActionLogToSheet(
+  actionName: string,
+  actionDetails: string
+): Promise<void> {
+  const raw = localStorage.getItem('app_contract_settings');
+  let logsEnabled = true;
+  let userName = "Kế toán viên";
+  let webAppUrl = GOOGLE_SHEETS_SCRIPT_URL;
+
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.logsEnabled === false) {
+        logsEnabled = false;
+      }
+      if (parsed.userName) {
+        userName = String(parsed.userName).trim();
+      }
+      if (parsed.googleSheetsUrl && typeof parsed.googleSheetsUrl === 'string' && parsed.googleSheetsUrl.trim().startsWith('http')) {
+        webAppUrl = parsed.googleSheetsUrl.trim();
+      }
+    } catch (e) {}
+  }
+
+  if (!logsEnabled || !webAppUrl || !webAppUrl.startsWith('http')) {
+    return;
+  }
+
+  try {
+    // Gọi fetch ngầm dạng no-cors để tránh lỗi CORS và chạy phi tuần tự
+    fetch(webAppUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "log",
+        user: userName,
+        actionName,
+        actionDetails
+      })
+    }).catch(err => {
+      console.error("Lỗi ghi log lên Sheets (catch):", err);
+    });
+  } catch (err) {
+    console.error("Lỗi ghi log lên Sheets:", err);
   }
 }
 

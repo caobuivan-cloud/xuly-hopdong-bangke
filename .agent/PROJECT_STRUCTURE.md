@@ -1,7 +1,7 @@
 # Project Structure - Xu ly hop dong - bang ke
 
 > Tạo ngày: 2026-06-19
-> Cập nhật gần nhất: 2026-06-19
+> Cập nhật gần nhất: 2026-06-20
 > Mục đích: Lưu snapshot cấu trúc codebase để AI có thể onboard và resume nhanh.
 
 ---
@@ -12,10 +12,25 @@
 [root]/
 |-- .agent/
 |   |-- skills/
-|-- assets/
+|   |-- changelog/
+|   |-- testing/
+|   |-- history/
 |-- src/
+|   |-- components/
+|   |   |-- BangKeView.tsx
+|   |   |-- HopDongMoiView.tsx
+|   |   |-- LuanChuyenView.tsx
+|   |   |-- SettingsView.tsx
+|   |   |-- ExcelUpload.tsx
+|   |-- services/
+|   |   |-- dbService.ts
 |   |-- utils/
-|       |-- fastImport.ts
+|   |   |-- fastImport.ts
+|   |   |-- businessLogic.ts
+|   |   |-- excel.ts
+|   |-- types.ts
+|   |-- App.tsx
+|   |-- main.tsx
 |-- De bai xu ly hop dong bang ke.md
 |-- google_apps_script.js
 |-- index.html
@@ -35,6 +50,8 @@
 | Module/Service | Path | Trách nhiệm | Phụ thuộc chính |
 |----------------|------|-------------|------------------|
 | Fast Excel Export Helper | `src/utils/fastImport.ts` | Ánh xạ cấu trúc dữ liệu 36 cột chuẩn FAST cho các luồng xuất dữ liệu | |
+| Data Sync & Logging Service | `src/services/dbService.ts` | Quản lý đồng bộ Master Data với Google Sheets & Ghi nhận logs hoạt động | localStorage, fetch |
+| Business Mapping Logic | `src/utils/businessLogic.ts` | Logic cốt lõi chuẩn hóa văn bản, lookup, và khớp từ khóa nghiệp vụ | |
 
 ## 4. Config / Infra quan trọng
 

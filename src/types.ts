@@ -43,6 +43,9 @@ export interface ContractSettings {
   contractSuffix: string;
   contractNameSeparator: string;
   exceptionRules: ExceptionRule[];
+  logsEnabled?: boolean;
+  userName?: string;
+  googleSheetsUrl?: string;
 }
 
 export interface DepartmentMaster {

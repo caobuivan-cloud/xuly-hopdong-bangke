@@ -8,6 +8,19 @@
 
 ## 2026-06-20
 
+### feat: tích hợp ghi nhật ký hoạt động người dùng lên Google Sheets
+- Bổ sung sheet `ActivityLogs` trong GAS để ghi nhận nhật ký của các hành động chính (tải tệp, sửa dòng chứng từ, xuất Excel, khởi động ứng dụng).
+- Tách biệt luồng đồng bộ: Cấu hình và Master Data được lưu trữ trên file active hiện tại, còn Nhật ký hoạt động được ghi riêng biệt sang Google Sheet mới có ID `1-_xq6s9A4mYC6NyQoxZQfMoKz7SqkpW1Oq0iPpu7O-o`.
+- Cung cấp cơ chế tự động điền URL Web App mặc định và ẩn giao diện cấu hình log trên Setup screen nhằm đơn giản hóa trải nghiệm người dùng.
+- Files:
+  - [App.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/App.tsx)
+  - [dbService.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%2520ke/src/services/dbService.ts)
+  - [SettingsView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/SettingsView.tsx)
+  - [LuanChuyenView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/LuanChuyenView.tsx)
+  - [HopDongMoiView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/HopDongMoiView.tsx)
+  - [BangKeView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/BangKeView.tsx)
+  - [google_apps_script.js](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/google_apps_script.js)
+
 ### feat: lưu trữ Google Sheet cho cấu hình và Master Data
 - Triển khai giải pháp đồng bộ dữ liệu ngầm bất đồng bộ (Background Auto-Sync) với Google Sheets Web App thông qua Google Apps Script Web App API.
 - Tự động kéo dữ liệu (Pull) mới nhất từ Google Sheets khi khởi chạy ứng dụng ngầm mà không gây block tiến trình render chính (Local Cache First).

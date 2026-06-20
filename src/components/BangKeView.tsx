@@ -20,7 +20,7 @@ import {
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
   parsePostingDateRange, parseContractDateFromBooking
 } from '../utils/businessLogic';
-import { dbService } from '../services/dbService';
+import { dbService, writeActionLogToSheet } from '../services/dbService';
 
 interface BangKeViewProps {
   id?: string;
@@ -117,6 +117,15 @@ export default function BangKeView({
     if (!confirmResetProcessedData()) return;
     setter(files);
     setProcessedRows(null);
+    if (files.length > 0) {
+      const fileNames = files.map(f => f.fileName).join(', ');
+      const isFast = setter === setFileFastList;
+      const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
+      writeActionLogToSheet(
+        `Tải file ${typeStr}`,
+        `Tải lên tệp: ${fileNames}`
+      );
+    }
   };
 
   const removeUploadedFile = (
@@ -124,7 +133,18 @@ export default function BangKeView({
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
     if (!confirmResetProcessedData()) return;
-    setter((files) => files.filter((_, fileIndex) => fileIndex !== index));
+    setter((files) => {
+      const removedFile = files[index];
+      if (removedFile) {
+        const isFast = setter === setFileFastList;
+        const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
+        writeActionLogToSheet(
+          `Xóa file ${typeStr}`,
+          `Xóa tệp: ${removedFile.fileName}`
+        );
+      }
+      return files.filter((_, fileIndex) => fileIndex !== index);
+    });
     setProcessedRows(null);
   };
 
@@ -393,6 +413,10 @@ export default function BangKeView({
 
         setProcessedRows(mapped);
         setCurrentPage(1);
+        writeActionLogToSheet(
+          'Xử lý bảng kê',
+          `Xử lý thành công ${mapped.length} dòng dữ liệu.`
+        );
       } catch (err: any) {
         setErrorMessage(err?.message || 'Có lỗi xảy ra khi xử lý dữ liệu.');
       } finally {
@@ -404,7 +428,8 @@ export default function BangKeView({
   // Autocomplete change side effects
   const handleUpdateField = (rowId: string, field: string, value: any) => {
     if (!processedRows) return;
-
+    const row = processedRows.find(r => r.id === rowId);
+    const oldVal = row ? row[field] : '';
     const updated = processedRows.map(row => {
       if (row.id !== rowId) return row;
       const newRow = { ...row, [field]: value };
@@ -500,6 +525,15 @@ export default function BangKeView({
     });
 
     setProcessedRows(updated);
+
+    if (row && String(oldVal) !== String(value)) {
+      const fieldLabel = FIELD_LABELS[field] || field;
+      const docCode = row.maBooking || row.maHopDong || `Dòng ${rowId}`;
+      writeActionLogToSheet(
+        'Sửa dòng bảng kê',
+        `Thay đổi trường "${fieldLabel}" của booking "${docCode}" từ "${oldVal}" sang "${value}"`
+      );
+    }
   };
 
   // Autocomplete matcher options selector
@@ -674,6 +708,11 @@ export default function BangKeView({
     exportToExcel(
       [{ sheetName: 'HĐ Đối Soát Fast Import', data: outputData }],
       targetFileName
+    );
+
+    writeActionLogToSheet(
+      `Xuất Excel bảng kê hợp đồng ${fileType === 'moi' ? 'mới' : 'cũ'}`,
+      `Xuất thành công tệp Excel [${targetFileName}] chứa ${exportSubset.length} dòng.`
     );
   };
 
