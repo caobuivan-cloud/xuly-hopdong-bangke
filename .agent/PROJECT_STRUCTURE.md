@@ -14,6 +14,8 @@
 |   |-- skills/
 |-- assets/
 |-- src/
+|   |-- utils/
+|       |-- fastImport.ts
 |-- De bai xu ly hop dong bang ke.md
 |-- index.html
 |-- package.json
@@ -31,6 +33,7 @@
 
 | Module/Service | Path | Trách nhiệm | Phụ thuộc chính |
 |----------------|------|-------------|------------------|
+| Fast Excel Export Helper | `src/utils/fastImport.ts` | Ánh xạ cấu trúc dữ liệu 36 cột chuẩn FAST cho các luồng xuất dữ liệu | |
 
 ## 4. Config / Infra quan trọng
 

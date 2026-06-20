@@ -14,6 +14,7 @@ import {
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel } from '../utils/excel';
+import { buildFastImportRows } from '../utils/fastImport';
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
 } from '../utils/businessLogic';
@@ -22,11 +23,76 @@ import { dbService } from '../services/dbService';
 interface LuanChuyenViewProps {
   id?: string;
   config: ContractSettings;
+  onHeaderActionsChange?: (actions: React.ReactNode | null) => void;
 }
+
+type QuickFilter = 'ALL' | 'QUALIFIED' | 'MISSING_KHACH' | 'MISSING_DEPT' | 'MISSING_VV' | 'NEED_CHECK';
+
+const FIELD_LABELS: Record<string, string> = {
+  maKhach: 'Mã khách',
+  tenKhachHang: 'Tên khách hàng',
+  boPhanThucHien: 'Bộ phận thực hiện',
+  tenNvkd: 'Tên NVKD',
+  maVv: 'Mã vụ việc',
+  tkDoanhThu: 'TK doanh thu',
+  sanPhamImport: 'Sản phẩm import',
+  chuyenTrangImport: 'Chuyên trang import',
+};
+
+function TooltipIcon({
+  children,
+  tooltip,
+}: {
+  children: React.ReactNode;
+  tooltip: string;
+}) {
+  return (
+    <span className="relative inline-flex items-center group">
+      {children}
+      <span className="pointer-events-none absolute left-full top-1/2 z-[120] ml-2 hidden w-72 -translate-y-1/2 whitespace-normal rounded-md bg-slate-900 px-2.5 py-1.5 text-left text-[10px] font-medium leading-snug text-white shadow-lg group-hover:block">
+        {tooltip}
+      </span>
+    </span>
+  );
+}
+
+const mergeUploadedFiles = (files: UploadedFileData[], label: string): UploadedFileData | null => {
+  if (files.length === 0) return null;
+
+  const headers = new Set<string>();
+  const rows: Record<string, any>[] = [];
+
+  files.forEach((file) => {
+    const primarySheet = file.sheets[0];
+    if (!primarySheet) return;
+
+    primarySheet.headers.forEach((header) => headers.add(header));
+    primarySheet.rows.forEach((row) => {
+      rows.push({
+        ...row,
+        __sourceFile: file.fileName,
+      });
+    });
+  });
+
+  return {
+    fileName: files.length === 1 ? files[0].fileName : `${label} (${files.length} file)`,
+    fileSize: files.reduce((total, file) => total + file.fileSize, 0),
+    uploadedAt: files[0].uploadedAt,
+    sheets: [
+      {
+        sheetName: label,
+        headers: Array.from(headers),
+        rows,
+      },
+    ],
+  };
+};
 
 export default function LuanChuyenView({
   id = 'luan-chuyen-view',
   config,
+  onHeaderActionsChange,
 }: LuanChuyenViewProps) {
   // Master data state
   const [customers, setCustomers] = useState<CustomerMaster[]>([]);
@@ -35,18 +101,58 @@ export default function LuanChuyenView({
   const [loadingMaster, setLoadingMaster] = useState(true);
 
   // Separate upload states for Hard Contract and Fast Contract
-  const [fileCung, setFileCung] = useState<UploadedFileData | null>(null);
-  const [fileFast, setFileFast] = useState<UploadedFileData | null>(null);
+  const [fileCungList, setFileCungList] = useState<UploadedFileData[]>([]);
+  const [fileFastList, setFileFastList] = useState<UploadedFileData[]>([]);
 
   // Processing state
   const [processedRows, setProcessedRows] = useState<Record<string, any>[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Filtering & Pagination states
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState(true); // Default to filter by Fast list comparison
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('QUALIFIED');
+  const [vvConfidenceRange, setVvConfidenceRange] = useState({ from: '', to: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 15;
+
+  const fileCung = useMemo(() => mergeUploadedFiles(fileCungList, 'Hợp đồng luân chuyển'), [fileCungList]);
+  const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
+
+  const confirmResetProcessedData = () => {
+    if (!processedRows) return true;
+
+    const ok = window.confirm(
+      'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?'
+    );
+
+    if (ok) {
+      setProcessedRows(null);
+      setCurrentPage(1);
+      setActiveAutocomplete(null);
+    }
+
+    return ok;
+  };
+
+  const replaceUploadedFiles = (
+    files: UploadedFileData[],
+    setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
+  ) => {
+    if (!confirmResetProcessedData()) return;
+    setter(files);
+    setProcessedRows(null);
+  };
+
+  const removeUploadedFile = (
+    index: number,
+    setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
+  ) => {
+    if (!confirmResetProcessedData()) return;
+    setter((files) => files.filter((_, fileIndex) => fileIndex !== index));
+    setProcessedRows(null);
+  };
 
   // Autocomplete editing states
   const [activeAutocomplete, setActiveAutocomplete] = useState<{
@@ -95,16 +201,21 @@ export default function LuanChuyenView({
 
   // Run business logic mapping and enrichment
   const handleProcessFiles = () => {
+    if (isProcessing) return;
+
     if (!fileCung || fileCung.sheets.length === 0) {
       setErrorMessage('Vui lòng tải lên "File Hợp đồng cứng" trước khi xử lý.');
       return;
     }
 
-    setErrorMessage(null);
-    const sheetCung = fileCung.sheets[0];
-    const sheetFast = fileFast && fileFast.sheets.length > 0 ? fileFast.sheets[0] : null;
+    setIsProcessing(true);
+    window.setTimeout(() => {
+      try {
+        setErrorMessage(null);
+        const sheetCung = fileCung.sheets[0];
+        const sheetFast = fileFast && fileFast.sheets.length > 0 ? fileFast.sheets[0] : null;
 
-    const mapped = sheetCung.rows.map((row, index) => {
+        const mapped = sheetCung.rows.map((row, index) => {
       // 1. Read key texts for lookup
       const tenKhachHang = getCellValue(row, 'Tên Khách hàng', 'Ten Khach hang', 'Khách hàng', 'Tên khách').trim();
       const tenNvkd = getCellValue(row, 'Tên NVKD', 'Ten NVKD', 'NVKD', 'Nhân viên kinh doanh', 'Người bán').trim();
@@ -246,8 +357,14 @@ export default function LuanChuyenView({
       };
     });
 
-    setProcessedRows(mapped);
-    setCurrentPage(1);
+        setProcessedRows(mapped);
+        setCurrentPage(1);
+      } catch (err: any) {
+        setErrorMessage(err?.message || 'Có lỗi xảy ra khi xử lý dữ liệu.');
+      } finally {
+        window.setTimeout(() => setIsProcessing(false), 450);
+      }
+    }, 0);
   };
 
   // Inline updates for any manually modified fields
@@ -257,6 +374,13 @@ export default function LuanChuyenView({
       if (row.id !== rowId) return row;
 
       const newRow = { ...row, [field]: val };
+      const changedManually = String(row[field] ?? '') !== String(val ?? '');
+      if (changedManually) {
+        newRow.manualChanges = {
+          ...(row.manualChanges || {}),
+          [field]: true,
+        };
+      }
 
       // Extra helpers: if product selection changes, let's update related info
       if (field === 'maVv') {
@@ -325,6 +449,21 @@ export default function LuanChuyenView({
       // 1. apply exclusion logic
       if (!shouldKeepRow(row)) return false;
 
+      if (quickFilter === 'MISSING_KHACH' && row.maKhach?.trim()) return false;
+      if (quickFilter === 'MISSING_DEPT' && row.boPhanThucHien?.trim()) return false;
+      if (quickFilter === 'MISSING_VV' && row.maVv?.trim()) return false;
+      if (
+        quickFilter === 'NEED_CHECK' &&
+        !(row.maVv?.trim() && (row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70))
+      ) return false;
+
+      const rangeFrom = vvConfidenceRange.from === '' ? 0 : Math.max(0, Math.min(100, Number(vvConfidenceRange.from)));
+      const rangeTo = vvConfidenceRange.to === '' ? 100 : Math.max(0, Math.min(100, Number(vvConfidenceRange.to)));
+      const lowerConfidence = Math.min(rangeFrom, rangeTo);
+      const upperConfidence = Math.max(rangeFrom, rangeTo);
+      const rowConfidence = Number(row.confidenceScore || 0);
+      if ((vvConfidenceRange.from !== '' || vvConfidenceRange.to !== '') && (rowConfidence < lowerConfidence || rowConfidence > upperConfidence)) return false;
+
       // 2. apply text search matches
       if (searchTerm.trim()) {
         const query = normalizeText(searchTerm);
@@ -338,7 +477,7 @@ export default function LuanChuyenView({
 
       return true;
     });
-  }, [processedRows, filterActive, fileFast, searchTerm]);
+  }, [processedRows, filterActive, fileFast, quickFilter, vvConfidenceRange, searchTerm]);
 
   // Pagination rows
   const paginatedRows = useMemo(() => {
@@ -382,12 +521,15 @@ export default function LuanChuyenView({
     if (!processedRows || filteredRows.length === 0) return;
 
     // Check for critical missing values or validation markings before exporting
-    const hasWarnings = filteredRows.some(row => 
-      !row.ngayBatDau || !row.ngayKetThuc || !row.ngayHopDong || 
+    const hasWarnings = filteredRows.some(row =>
+      !row.ngayBatDau ||
+      !row.ngayKetThuc ||
+      !row.ngayHopDong ||
       !row.maKhach || !row.maKhach.trim() ||
       !row.boPhanThucHien || !row.boPhanThucHien.trim() ||
       !row.maVv || !row.maVv.trim() ||
-      row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70
+      row.matchStatus === 'CAN_KIEM_TRA' ||
+      row.confidenceScore < 70
     );
 
     if (hasWarnings) {
@@ -399,52 +541,49 @@ export default function LuanChuyenView({
       if (!confirmExport) return;
     }
 
-    const exportFormatted = filteredRows.map((row, index) => {
-      return {
-        'Mã hợp đồng': row.maHopDong || '',
-        'Tên hợp đồng': row.tenHopDong || '',
-        'Mã khách': row.maKhach || '',
-        'Bộ phân thưc hiện': row.boPhanThucHien || '',
-        'Ngày bắt đầu': row.ngayBatDau || '',
-        'Ngày kết thúc': row.ngayKetThuc || '',
-        'Ngày hợp đồng': row.ngayHopDong || '',
-        'ngay_hd1': row.ngayHd1 || '',
-        'ngay_hd2': row.ngayHd2 || '',
-        'ngay_hd3': row.ngayHd3 || '',
-        'ngay_hd4': row.ngayHd4 || '',
-        'ngay_hd5': row.ngayHd5 || '',
-        'ngay_hd6': row.ngayHd6 || '',
-        'tien_hd1': row.tienHd1 || '',
-        'tien_hd2': row.tienHd2 || '',
-        'tien_hd3': row.tienHd3 || '',
-        'tien_hd4': row.tienHd4 || '',
-        'tien_hd5': row.tienHd5 || '',
-        'tien_hd6': row.tienHd6 || '',
-        'Giá trị': row.giaTri || 0,
-        'ma_vv': row.maVv || '',
-        'Số lượng': row.soLuong || 0,
-        'Đơn giá': row.donGia || 0,
-        'Thuế suất': row.thueSuat || 0,
-        'Giá trị của vv VAT': row.giaTriCuaVv || 0,
-        'tk_doanh thu': row.tkDoanhThu || '',
-        'Bảng kê': row.bangKe || '',
-        'Tỷ lệ ck': row.tyLeCk || 0,
-        'Chuyên trang': row.chuyenTrangImport || '',
-        'Ghi chú chi tiết': row.ghiChu || '',
-        ' ': '', // Empty blank block 1
-        'Status': 1,
-        '  ': '', // Empty blank block 2
-        'Ghi chú tổng': row.fastGhiChu || '',
-        'stt': index + 1,
-        'Tên sản phẩm': row.sanPhamImport || '',
-      };
-    });
+    const exportFormatted = buildFastImportRows(filteredRows, { status: 1, sttMode: 'blank' });
 
     exportToExcel(
       [{ sheetName: 'HĐ Luân Chuyển Fast Import', data: exportFormatted }],
       `Enriched_LuanChuyen_36Cols_${new Date().toISOString().split('T')[0]}.xlsx`
     );
   };
+
+  useEffect(() => {
+    onHeaderActionsChange?.(
+      <div className="flex items-center gap-2">
+        {fileCung && (
+          <button
+            onClick={handleProcessFiles}
+            disabled={isProcessing}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-wait text-white text-xs font-bold rounded-full shadow-sm transition-all active:scale-[0.98]"
+          >
+            {isProcessing ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Calculator className="h-3.5 w-3.5" />
+            )}
+            <span>{isProcessing ? 'Đang xử lý' : 'Xử lý'}</span>
+          </button>
+        )}
+
+        {processedRows && (
+          <button
+            onClick={handleExportFinished}
+            disabled={filteredRows.length === 0}
+            title={`Xuất ${filteredRows.length} dòng - 36 cột`}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer disabled:cursor-not-allowed"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Excel</span>
+            <span className="bg-emerald-500/40 text-white text-[10px] font-mono px-1.5 py-0.5 rounded-full">{filteredRows.length}</span>
+          </button>
+        )}
+      </div>
+    );
+
+    return () => onHeaderActionsChange?.(null);
+  }, [fileCung, processedRows, filteredRows, isProcessing, onHeaderActionsChange]);
 
   return (
     <div id={id} className="space-y-6">
@@ -464,7 +603,7 @@ export default function LuanChuyenView({
       {/* Dual File Upload Phase */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Upload 1: Hard Contract */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3.5">
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm space-y-2.5">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono flex items-center space-x-1.5">
               <span className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">1</span>
@@ -482,17 +621,48 @@ export default function LuanChuyenView({
           </div>
           <p className="text-[11px] text-slate-400">Xem xét tự động trích xuất mã khách, bộ phận thực hiện, ma_vv, sản phẩm và doanh thu tài khoản.</p>
           <ExcelUpload
+            multiple
+            compact
+            showSuccessDetails={false}
             onUploadSuccess={(data) => {
-              setFileCung(data);
-              setProcessedRows(null);
+              replaceUploadedFiles([data], setFileCungList);
+            }}
+            onUploadManySuccess={(data) => {
+              replaceUploadedFiles(data, setFileCungList);
             }}
             onUploadError={(err) => setErrorMessage(err)}
-            placeholderText="Kéo thả File Hợp đồng cứng (.xlsx, .xls) vào đây hoặc click để chọn"
+            placeholderText="Kéo thả một hoặc nhiều File Hợp đồng cứng (.xlsx, .xls) vào đây hoặc click để chọn"
           />
+          {fileCungList.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                File đã tải lên ({fileCungList.length})
+              </div>
+              <div className="space-y-1">
+                {fileCungList.map((file, index) => (
+                  <div key={`${file.fileName}_${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] font-semibold text-slate-700" title={file.fileName}>
+                        {file.fileName} <span className="text-slate-400 font-mono">({file.sheets[0]?.rows.length || 0} dòng)</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeUploadedFile(index, setFileCungList)}
+                      title="Xóa file này khỏi danh sách xử lý"
+                      className="h-6 w-6 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Upload 2: Fast Contract List */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3.5">
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm space-y-2.5">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono flex items-center space-x-1.5">
               <span className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">2</span>
@@ -510,35 +680,46 @@ export default function LuanChuyenView({
           </div>
           <p className="text-[11px] text-slate-400">Để tự đối soát loại trừ các hợp đồng đã ký trong Fast (Lọc bớt các dòng trùng khớp).</p>
           <ExcelUpload
+            multiple
+            compact
+            showSuccessDetails={false}
             onUploadSuccess={(data) => {
-              setFileFast(data);
-              setProcessedRows(null);
+              replaceUploadedFiles([data], setFileFastList);
+            }}
+            onUploadManySuccess={(data) => {
+              replaceUploadedFiles(data, setFileFastList);
             }}
             onUploadError={(err) => setErrorMessage(err)}
-            placeholderText="Kéo thả File Fast (.xlsx, .xls) vào đây hoặc click để chọn"
+            placeholderText="Kéo thả một hoặc nhiều File Fast (.xlsx, .xls) vào đây hoặc click để chọn"
           />
+          {fileFastList.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                File đã tải lên ({fileFastList.length})
+              </div>
+              <div className="space-y-1">
+                {fileFastList.map((file, index) => (
+                  <div key={`${file.fileName}_${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] font-semibold text-slate-700" title={file.fileName}>
+                        {file.fileName} <span className="text-slate-400 font-mono">({file.sheets[0]?.rows.length || 0} dòng)</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeUploadedFile(index, setFileFastList)}
+                      title="Xóa file này khỏi danh sách đối soát Fast"
+                      className="h-6 w-6 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Process Button Panel */}
-      {fileCung && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center space-x-3 text-slate-600 text-xs">
-            <Info className="h-5 w-5 text-indigo-500 flex-shrink-0" />
-            <div>
-              <p className="font-semibold text-slate-700">Dữ liệu đã nạp sẵn sàng</p>
-              <p className="text-slate-400">Hợp đồng luân chuyển: <strong className="font-mono text-indigo-600">[{fileCung?.fileName}]</strong> ({fileCung?.sheets[0]?.rows.length} dòng) {fileFast && <>| So khớp Fast: <strong className="font-mono text-rose-600">[{fileFast?.fileName}]</strong> ({fileFast?.sheets[0]?.rows.length} dòng)</>}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleProcessFiles}
-            className="w-full sm:w-auto flex items-center justify-center space-x-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
-          >
-            <Calculator className="h-4.5 w-4.5" />
-            <span>HẠCH TOÁN & ĐỐI SOÁT FAST</span>
-          </button>
-        </div>
-      )}
 
       {errorMessage && (
         <div className="bg-rose-50 border border-rose-150 p-4 rounded-xl text-rose-800 text-xs flex items-start space-x-2.5">
@@ -547,121 +728,189 @@ export default function LuanChuyenView({
         </div>
       )}
 
+      {isProcessing && (
+        <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-indigo-700 text-xs font-bold flex items-center gap-2 shadow-sm">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          <span>Đang xử lý dữ liệu Excel...</span>
+        </div>
+      )}
+
       {/* Processed results block */}
       {processedRows && (
-        <div className="space-y-6">
-          
-          {/* Summary stats cards */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            
-            {/* Total source cells */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 transition-all">
-              <span className="text-[10px] font-bold text-slate-400 block uppercase font-mono tracking-wider">Hợp đồng gốc</span>
-              <div className="flex items-baseline space-x-1.5 mt-1.5">
-                <span className="text-2xl font-extrabold text-slate-700 font-sans">{stats.totalSource}</span>
-                <span className="text-[10px] text-slate-400 font-mono">dòng</span>
-              </div>
-              <span className="text-[9px] text-slate-400 mt-1 block">Tổng tệp cứng tải lên</span>
-            </div>
+        <div className="space-y-4">
 
-            {/* Qualified for Export */}
-            <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 transition-all">
-              <span className="text-[10px] font-bold text-indigo-500 block uppercase font-mono tracking-wider">Đủ điều kiện Xuất</span>
-              <div className="flex items-baseline space-x-1.5 mt-1.5">
-                <span className="text-2xl font-extrabold text-indigo-700 font-sans">{stats.qualifiedCount}</span>
-                <span className="text-[10px] text-indigo-400 font-mono">dòng</span>
-              </div>
-              <span className="text-[9px] text-indigo-400 mt-1 block">
-                {fileFast ? "Đã lọc loại trừ qua Fast" : "Chưa lọc qua Fast"}
-              </span>
-            </div>
+          {/* Stats tab pills + search — single row bar */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Tab pills */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => { setQuickFilter('ALL'); setSearchTerm(''); setVvConfidenceRange({ from: '', to: '' }); setFilterActive(false); setCurrentPage(1); }}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition border ${
+                  quickFilter === 'ALL' && !searchTerm
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <span>Tất cả</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                  quickFilter === 'ALL' && !searchTerm ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                }`}>{stats.totalSource}</span>
+              </button>
 
-            {/* Missing customer code */}
-            <div className={`border rounded-xl p-4 transition-all ${stats.missingKhach > 0 ? 'bg-amber-50/40 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.missingKhach > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Thiếu mã khách</span>
-              <div className="flex items-baseline space-x-1.5 mt-1.5">
-                <span className={`text-2xl font-extrabold font-sans ${stats.missingKhach > 0 ? 'text-amber-700' : 'text-slate-705'}`}>{stats.missingKhach}</span>
-                <span className="text-[10px] text-slate-400 font-mono">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-400 mt-1 block">Cần bổ sung mã KH</span>
-            </div>
-
-            {/* Missing department code */}
-            <div className={`border rounded-xl p-4 transition-all ${stats.missingDept > 0 ? 'bg-amber-50/40 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.missingDept > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Thiếu bộ phận</span>
-              <div className="flex items-baseline space-x-1.5 mt-1.5">
-                <span className={`text-2xl font-extrabold font-sans ${stats.missingDept > 0 ? 'text-amber-700' : 'text-slate-705'}`}>{stats.missingDept}</span>
-                <span className="text-[10px] text-slate-400 font-mono">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-400 mt-1 block">Chưa map mã bộ phận</span>
-            </div>
-
-            {/* Missing ma_vv */}
-            <div className={`border rounded-xl p-4 transition-all ${stats.missingVv > 0 ? 'bg-rose-50/40 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.missingVv > 0 ? 'text-rose-600' : 'text-slate-400'}`}>Thiếu ma_vv</span>
-              <div className="flex items-baseline space-x-1.5 mt-1.5">
-                <span className={`text-2xl font-extrabold font-sans ${stats.missingVv > 0 ? 'text-rose-700' : 'text-slate-705'}`}>{stats.missingVv}</span>
-                <span className="text-[10px] text-slate-400 font-mono">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-400 mt-1 block">Không khớp sản phẩm</span>
-            </div>
-
-            {/* Needs check (CAN_KIEM_TRA) */}
-            <div className={`border rounded-xl p-4 transition-all ${stats.needCheck > 0 ? 'bg-amber-50/40 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.needCheck > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Cần kiểm tra</span>
-              <div className="flex items-baseline space-x-1.5 mt-1.5">
-                <span className={`text-2xl font-extrabold font-sans ${stats.needCheck > 0 ? 'text-amber-700' : 'text-slate-705'}`}>{stats.needCheck}</span>
-                <span className="text-[10px] text-slate-400 font-mono">dòng</span>
-              </div>
-              <span className="text-[9px] text-slate-400 mt-1 block">Độ tin cậy thấp (<span className="font-mono">70%</span>)</span>
-            </div>
-            
-          </div>
-
-          {/* Controller bars with interactive filters and export triggers */}
-          <div className="bg-slate-900 text-white rounded-xl p-5 shadow-md flex flex-col md:flex-row md:items-center md:justify-between gap-4 font-sans">
-            <div className="flex flex-wrap items-center gap-4">
-              
-              {/* Text Search input */}
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Mã HĐ, Tên HĐ, Tên KH..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="bg-slate-800 border border-slate-700 text-xs px-3.5 pl-9 py-2 rounded-lg text-white w-56 focus:outline-none focus:border-indigo-500 placeholder-slate-400 font-medium"
-                />
-              </div>
-
-              {/* Toggle comparing with Fast list */}
               {fileFast && (
-                <label className="flex items-center space-x-2 cursor-pointer select-none text-xs bg-slate-800 p-2 rounded-lg border border-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={filterActive}
-                    onChange={(e) => {
-                      setFilterActive(e.target.checked);
-                      setCurrentPage(1);
-                    }}
-                    className="rounded text-indigo-600 focus:ring-opacity-0 h-4 w-4"
-                  />
-                  <span className="font-semibold">Lọc tự động theo danh sách Fast ({stats.qualifiedCount} / {stats.totalSource} dòng)</span>
-                </label>
+                <button
+                  onClick={() => { setQuickFilter('QUALIFIED'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition border ${
+                    quickFilter === 'QUALIFIED'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-indigo-600 border-indigo-200 hover:border-indigo-400'
+                  }`}
+                >
+                  <span>Đủ điều kiện xuất</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                    quickFilter === 'QUALIFIED' ? 'bg-white/25 text-white' : 'bg-indigo-50 text-indigo-600'
+                  }`}>{stats.qualifiedCount}</span>
+                </button>
+              )}
+
+              {stats.missingKhach > 0 && (
+                <button
+                  onClick={() => { setQuickFilter('MISSING_KHACH'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'MISSING_KHACH'
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:border-amber-300'
+                  }`}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Thiếu Mã khách</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'MISSING_KHACH' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'
+                  }`}>{stats.missingKhach}</span>
+                </button>
+              )}
+
+              {stats.missingDept > 0 && (
+                <button
+                  onClick={() => { setQuickFilter('MISSING_DEPT'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'MISSING_DEPT'
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:border-amber-300'
+                  }`}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Thiếu Bộ phận</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'MISSING_DEPT' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'
+                  }`}>{stats.missingDept}</span>
+                </button>
+              )}
+
+              {stats.missingVv > 0 && (
+                <button
+                  onClick={() => { setQuickFilter('MISSING_VV'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'MISSING_VV'
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-rose-50 text-rose-700 border-rose-200 hover:border-rose-300'
+                  }`}
+                >
+                  <XCircle className="h-3 w-3" />
+                  <span>Thiếu MA_VV</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'MISSING_VV' ? 'bg-white/25 text-white' : 'bg-rose-100 text-rose-700'
+                  }`}>{stats.missingVv}</span>
+                </button>
+              )}
+
+              {stats.needCheck > 0 && (
+                <button
+                  onClick={() => { setQuickFilter('NEED_CHECK'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'NEED_CHECK'
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-amber-50 text-amber-600 border-amber-200 hover:border-amber-300'
+                  }`}
+                >
+                  <HelpCircle className="h-3 w-3" />
+                  <span>Cần kiểm tra</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'NEED_CHECK' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'
+                  }`}>{stats.needCheck}</span>
+                </button>
               )}
             </div>
 
-            <button
-              onClick={handleExportFinished}
-              disabled={filteredRows.length === 0}
-              className="flex items-center justify-center space-x-2 text-xs font-bold leading-none bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-750 disabled:text-slate-400 cursor-pointer disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg transition shadow-md"
-            >
-              <Download className="h-4.5 w-4.5" />
-              <span>XUẤT FILE PHỤC VỤ FAST IMPORT ({filteredRows.length} DÒNG - 36 CỘT)</span>
-            </button>
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* ma_vv confidence threshold */}
+            <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-sm ${
+              vvConfidenceRange.from !== '' || vvConfidenceRange.to !== ''
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-white text-slate-500 border-slate-200'
+            }`}>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span className="text-xs font-bold whitespace-nowrap">Khớp ma_vv</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                placeholder="Từ"
+                value={vvConfidenceRange.from}
+                onChange={(e) => {
+                  setVvConfidenceRange((prev) => ({ ...prev, from: e.target.value }));
+                  setCurrentPage(1);
+                }}
+                className="w-12 bg-white/70 border border-slate-200 rounded-md px-1.5 py-0.5 text-right text-xs font-bold font-mono text-slate-700 focus:outline-none focus:border-emerald-400"
+                aria-label="Phần trăm mã vụ việc khớp từ"
+              />
+              <span className="text-[10px] font-bold text-slate-400">-</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                placeholder="Đến"
+                value={vvConfidenceRange.to}
+                onChange={(e) => {
+                  setVvConfidenceRange((prev) => ({ ...prev, to: e.target.value }));
+                  setCurrentPage(1);
+                }}
+                className="w-12 bg-white/70 border border-slate-200 rounded-md px-1.5 py-0.5 text-right text-xs font-bold font-mono text-slate-700 focus:outline-none focus:border-emerald-400"
+                aria-label="Phần trăm mã vụ việc khớp đến"
+              />
+              <span className="text-xs font-bold">%</span>
+              {(vvConfidenceRange.from !== '' || vvConfidenceRange.to !== '') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVvConfidenceRange({ from: '', to: '' });
+                    setCurrentPage(1);
+                  }}
+                  title="Xóa khoảng lọc % khớp ma_vv"
+                  className="ml-0.5 h-4 w-4 flex items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-100"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Search input */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Tìm hợp đồng, tiền, ngân hàng..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="bg-white border border-slate-200 text-xs pl-8 pr-3 py-1.5 rounded-full text-slate-700 w-56 focus:outline-none focus:border-indigo-400 placeholder-slate-400 shadow-sm"
+              />
+            </div>
+
           </div>
 
           {/* Main Interactive Table */}
@@ -704,13 +953,32 @@ export default function LuanChuyenView({
                       const isMissingDept = !row.boPhanThucHien || !row.boPhanThucHien.trim();
                       const isMissingVv = !row.maVv || !row.maVv.trim();
                       const isLowConfidence = row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70;
+                      const rowWarnings = [
+                        isMissingKhach ? 'Thiếu Mã khách' : '',
+                        isMissingDept ? 'Thiếu Bộ phận thực hiện' : '',
+                        isMissingVv ? 'Thiếu Mã vụ việc' : '',
+                        !isMissingVv && isLowConfidence ? `Mã vụ việc khớp thấp (${row.confidenceScore || 0}%)` : '',
+                      ].filter(Boolean);
+                      const manualFields = Object.keys(row.manualChanges || {}).map((field) => FIELD_LABELS[field] || field);
                       
                       return (
                         <tr key={row.id} className="hover:bg-slate-50/50 transition">
                           
                           {/* STT Column */}
                           <td className="py-3 px-3 text-center text-slate-450 font-mono font-bold border-r border-slate-100">
-                            {absoluteIndex}
+                            <div className="flex items-center justify-center gap-1.5">
+                              <span>{absoluteIndex}</span>
+                              {manualFields.length === 0 && rowWarnings.length > 0 && (
+                                <TooltipIcon tooltip={`Cảnh báo: ${rowWarnings.join('; ')}`}>
+                                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                                </TooltipIcon>
+                              )}
+                              {manualFields.length > 0 && (
+                                <TooltipIcon tooltip={`Đã sửa thủ công: ${manualFields.join(', ')}`}>
+                                  <Info className="h-3.5 w-3.5 text-sky-500" />
+                                </TooltipIcon>
+                              )}
+                            </div>
                           </td>
 
                           {/* Code & Name of Contract */}
@@ -748,7 +1016,7 @@ export default function LuanChuyenView({
                             
                             {/* Autocomplete dropdown list */}
                             {activeAutocomplete?.rowId === row.id && activeAutocomplete?.field === 'maKhach' && (
-                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto w-64 p-1 text-left">
+                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-72 overflow-y-auto w-96 p-1 text-left">
                                 <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider p-1.5 font-mono border-b bg-slate-50 flex items-center justify-between">
                                   <span>Gợi ý Mã khách</span>
                                   <button type="button" onClick={() => setActiveAutocomplete(null)} className="text-slate-400 hover:text-slate-600">×</button>
@@ -765,10 +1033,16 @@ export default function LuanChuyenView({
                                         handleUpdateField(row.id, 'tenKhachHang', c.tenKhach);
                                         setActiveAutocomplete(null);
                                       }}
-                                      className="w-full text-left p-1.5 hover:bg-slate-50 rounded flex flex-col transition text-[11px]"
+                                      className="group relative w-full text-left p-2 hover:bg-indigo-50/60 rounded flex flex-col transition text-[11px]"
                                     >
-                                      <span className="font-bold text-indigo-650 font-mono">{c.maKhach}</span>
-                                      <span className="text-slate-500 font-sans truncate">{c.tenKhach}</span>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <span className="font-bold text-indigo-650 font-mono shrink-0">{c.maKhach}</span>
+                                        <span className="text-[10px] text-slate-400 font-mono">STT: {c.stt || 'N/A'}</span>
+                                      </div>
+                                      <span className="text-slate-700 font-semibold font-sans leading-snug break-words">{c.tenKhach}</span>
+                                      <span className="pointer-events-none absolute left-2 top-full z-[120] mt-1 hidden max-w-sm rounded-md bg-slate-900 px-2.5 py-1.5 text-[10px] leading-snug text-white shadow-lg group-hover:block">
+                                        Mã khách: {c.maKhach} | Tên khách: {c.tenKhach}
+                                      </span>
                                     </button>
                                   ))
                                 )}
@@ -794,7 +1068,7 @@ export default function LuanChuyenView({
 
                             {/* Autocomplete dropdown */}
                             {activeAutocomplete?.rowId === row.id && activeAutocomplete?.field === 'boPhanThucHien' && (
-                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto w-64 p-1 text-left">
+                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-72 overflow-y-auto w-96 p-1 text-left">
                                 <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider p-1.5 font-mono border-b bg-slate-50 flex items-center justify-between">
                                   <span>Gợi ý Bộ Phận</span>
                                   <button type="button" onClick={() => setActiveAutocomplete(null)} className="text-slate-400 hover:text-slate-600">×</button>
@@ -811,10 +1085,16 @@ export default function LuanChuyenView({
                                         handleUpdateField(row.id, 'tenNvkd', d.tenBoPhan);
                                         setActiveAutocomplete(null);
                                       }}
-                                      className="w-full text-left p-1.5 hover:bg-slate-50 rounded flex flex-col transition text-[11px]"
+                                      className="group relative w-full text-left p-2 hover:bg-indigo-50/60 rounded flex flex-col transition text-[11px]"
                                     >
-                                      <span className="font-bold text-indigo-650 font-mono">{d.maSale}</span>
-                                      <span className="text-slate-500 font-sans truncate">{d.tenBoPhan}</span>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <span className="font-bold text-indigo-650 font-mono shrink-0">{d.maSale}</span>
+                                        <span className="text-[10px] text-slate-400 font-mono">STT: {d.stt || 'N/A'}</span>
+                                      </div>
+                                      <span className="text-slate-700 font-semibold font-sans leading-snug break-words">{d.tenBoPhan}</span>
+                                      <span className="pointer-events-none absolute left-2 top-full z-[120] mt-1 hidden max-w-sm rounded-md bg-slate-900 px-2.5 py-1.5 text-[10px] leading-snug text-white shadow-lg group-hover:block">
+                                        Mã sale/bộ phận: {d.maSale} | Tên bộ phận: {d.tenBoPhan}
+                                      </span>
                                     </button>
                                   ))
                                 )}
@@ -845,7 +1125,7 @@ export default function LuanChuyenView({
 
                             {/* Autocomplete dropdown */}
                             {activeAutocomplete?.rowId === row.id && activeAutocomplete?.field === 'maVv' && (
-                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto w-72 p-1 text-left">
+                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-80 overflow-y-auto w-[28rem] p-1 text-left">
                                 <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider p-1.5 font-mono border-b bg-slate-50 flex items-center justify-between">
                                   <span>Chọn Vụ Việc / Sản phẩm Master</span>
                                   <button type="button" onClick={() => setActiveAutocomplete(null)} className="text-slate-400 hover:text-slate-600">×</button>
@@ -861,14 +1141,20 @@ export default function LuanChuyenView({
                                         handleUpdateField(row.id, 'maVv', p.maVuViec);
                                         setActiveAutocomplete(null);
                                       }}
-                                      className="w-full text-left p-2 hover:bg-slate-50 rounded flex flex-col transition text-[11px]"
+                                      className="group relative w-full text-left p-2 hover:bg-indigo-50/60 rounded flex flex-col transition text-[11px]"
                                     >
                                       <div className="flex items-center justify-between">
                                         <span className="font-bold text-indigo-750 font-mono">{p.maVuViec}</span>
-                                        <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1 rounded">{p.tkDoanhThu}</span>
+                                        <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">TK: {p.tkDoanhThu || 'N/A'}</span>
                                       </div>
-                                      <span className="text-slate-600 font-sans mt-0.5 truncate">{p.tenSanPham}</span>
-                                      <span className="text-[9px] text-slate-400 italic">Keyword: {p.keyword}</span>
+                                      <span className="text-slate-700 font-semibold font-sans mt-0.5 leading-snug break-words">{p.tenSanPham}</span>
+                                      <span className="text-[10px] text-slate-500 leading-snug break-words">Từ khóa: {p.keyword}</span>
+                                      {p.thueSuat !== undefined && p.thueSuat !== '' && (
+                                        <span className="text-[10px] text-slate-400 font-mono">Thuế suất: {p.thueSuat}%</span>
+                                      )}
+                                      <span className="pointer-events-none absolute left-2 top-full z-[120] mt-1 hidden max-w-md rounded-md bg-slate-900 px-2.5 py-1.5 text-[10px] leading-snug text-white shadow-lg group-hover:block">
+                                        Mã vụ việc: {p.maVuViec} | Sản phẩm: {p.tenSanPham} | TK doanh thu: {p.tkDoanhThu || 'N/A'} | Từ khóa: {p.keyword}
+                                      </span>
                                     </button>
                                   ))
                                 )}

@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Settings, Save, Check, FileDown, ShieldAlert, Cpu, 
   Trash2, Plus, Edit, Database, FileSpreadsheet, AlertCircle, 
-  CheckCircle, FileUp, X, ChevronDown, ChevronUp, RefreshCw, Sparkles 
+  CheckCircle, FileUp, X, ChevronDown, ChevronUp, RefreshCw, Sparkles, Search 
 } from 'lucide-react';
 import { 
   ContractSettings, ExceptionRule, DepartmentMaster, CustomerMaster, ProductMaster 
@@ -63,6 +63,11 @@ export default function SettingsView({
   // Expand states for previewing the Master Data
   const [expandedMaster, setExpandedMaster] = useState<'bophan' | 'khach' | 'sanpham' | null>(null);
 
+  // Search term states for each Master table
+  const [searchTermDept, setSearchTermDept] = useState('');
+  const [searchTermCust, setSearchTermCust] = useState('');
+  const [searchTermProd, setSearchTermProd] = useState('');
+
   // Upload/Parse feedback states
   const [uploadFeedback, setUploadFeedback] = useState<{
     type: 'success' | 'error' | null;
@@ -89,6 +94,35 @@ export default function SettingsView({
       setExceptionRules(config.exceptionRules);
     }
   }, [config.exceptionRules]);
+
+  // Computed filtered arrays for Master search (client-side, covers all displayed fields except stt)
+  const normalizedDeptQuery = stripVietnameseDiacritics(searchTermDept);
+  const filteredDepartments = searchTermDept.trim() === ''
+    ? departments
+    : departments.filter(d =>
+        stripVietnameseDiacritics(d.tenBoPhan).includes(normalizedDeptQuery) ||
+        stripVietnameseDiacritics(d.maSale).includes(normalizedDeptQuery)
+      );
+
+  const normalizedCustQuery = stripVietnameseDiacritics(searchTermCust);
+  const filteredCustomers = searchTermCust.trim() === ''
+    ? customers
+    : customers.filter(c =>
+        stripVietnameseDiacritics(c.tenKhach).includes(normalizedCustQuery) ||
+        stripVietnameseDiacritics(c.maKhach).includes(normalizedCustQuery)
+      );
+
+  const normalizedProdQuery = stripVietnameseDiacritics(searchTermProd);
+  const filteredProducts = searchTermProd.trim() === ''
+    ? products
+    : products.filter(p =>
+        stripVietnameseDiacritics(p.keyword).includes(normalizedProdQuery) ||
+        stripVietnameseDiacritics(p.maVuViec).includes(normalizedProdQuery) ||
+        stripVietnameseDiacritics(p.tenSanPham).includes(normalizedProdQuery) ||
+        stripVietnameseDiacritics(p.tkDoanhThu).includes(normalizedProdQuery) ||
+        stripVietnameseDiacritics(String(p.thueSuat ?? '')).includes(normalizedProdQuery)
+      );
+
 
   const handleSaveConfigs = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -721,12 +755,43 @@ export default function SettingsView({
             </div>
           )}
 
+          {/* Search box for Master 1 */}
+          {departments.length > 0 && expandedMaster === 'bophan' && (
+            <div className="px-4 pt-3 pb-1">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  id="search-master-bophan"
+                  type="text"
+                  value={searchTermDept}
+                  onChange={e => setSearchTermDept(e.target.value)}
+                  placeholder="Tìm theo tên bộ phận hoặc mã sale..."
+                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-400 outline-none text-slate-700 placeholder-slate-400 bg-white"
+                />
+                {searchTermDept && (
+                  <button type="button" onClick={() => setSearchTermDept('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              {searchTermDept && (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Đang hiển thị {filteredDepartments.length} / {departments.length} dòng
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Preview collapsible table content */}
           {expandedMaster === 'bophan' && (
             <div className="p-4 overflow-x-auto max-h-[350px]">
               {departments.length === 0 ? (
                 <div className="py-8 px-4 text-center text-slate-400 italic">
                   Chưa nạp danh sách bộ phận master. Vui lòng tải file mẫu và import để xem trước.
+                </div>
+              ) : filteredDepartments.length === 0 ? (
+                <div className="py-6 px-4 text-center text-slate-400 italic text-xs">
+                  Không tìm thấy kết quả nào khớp với “{searchTermDept}”.
                 </div>
               ) : (
                 <table className="w-full text-xs text-left border-collapse">
@@ -738,7 +803,7 @@ export default function SettingsView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {departments.map((dept, index) => (
+                    {filteredDepartments.map((dept, index) => (
                       <tr key={index} className="hover:bg-slate-50/50">
                         <td className="px-4 py-2 text-slate-400 font-mono">{dept.stt}</td>
                         <td className="px-4 py-2 font-medium text-slate-850">{dept.tenBoPhan}</td>
@@ -826,12 +891,43 @@ export default function SettingsView({
             </div>
           )}
 
+          {/* Search box for Master 2 */}
+          {customers.length > 0 && expandedMaster === 'khach' && (
+            <div className="px-4 pt-3 pb-1">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  id="search-master-khach"
+                  type="text"
+                  value={searchTermCust}
+                  onChange={e => setSearchTermCust(e.target.value)}
+                  placeholder="Tìm theo tên hoặc mã khách hàng..."
+                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-400 outline-none text-slate-700 placeholder-slate-400 bg-white"
+                />
+                {searchTermCust && (
+                  <button type="button" onClick={() => setSearchTermCust('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              {searchTermCust && (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Đang hiển thị {filteredCustomers.length} / {customers.length} dòng
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Collapsible preview customer */}
           {expandedMaster === 'khach' && (
             <div className="p-4 overflow-x-auto max-h-[350px]">
               {customers.length === 0 ? (
                 <div className="py-8 px-4 text-center text-slate-400 italic">
                   Chưa nạp danh sách khách master. Vui lòng tải file mẫu và import để xem trước.
+                </div>
+              ) : filteredCustomers.length === 0 ? (
+                <div className="py-6 px-4 text-center text-slate-400 italic text-xs">
+                  Không tìm thấy kết quả nào khớp với “{searchTermCust}”.
                 </div>
               ) : (
                 <table className="w-full text-xs text-left border-collapse">
@@ -843,7 +939,7 @@ export default function SettingsView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {customers.map((cust, index) => (
+                    {filteredCustomers.map((cust, index) => (
                       <tr key={index} className="hover:bg-slate-50/50">
                         <td className="px-4 py-2 text-slate-400 font-mono">{cust.stt}</td>
                         <td className="px-4 py-2 font-medium text-slate-850">{cust.tenKhach}</td>
@@ -931,12 +1027,43 @@ export default function SettingsView({
             </div>
           )}
 
+          {/* Search box for Master 3 */}
+          {products.length > 0 && expandedMaster === 'sanpham' && (
+            <div className="px-4 pt-3 pb-1">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  id="search-master-sanpham"
+                  type="text"
+                  value={searchTermProd}
+                  onChange={e => setSearchTermProd(e.target.value)}
+                  placeholder="Tìm keyword, mã vụ việc, tên sản phẩm, TK doanh thu, thuế suất..."
+                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-400 outline-none text-slate-700 placeholder-slate-400 bg-white"
+                />
+                {searchTermProd && (
+                  <button type="button" onClick={() => setSearchTermProd('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              {searchTermProd && (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Đang hiển thị {filteredProducts.length} / {products.length} dòng
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Collapsible preview products */}
           {expandedMaster === 'sanpham' && (
             <div className="p-4 overflow-x-auto max-h-[350px]">
               {products.length === 0 ? (
                 <div className="py-8 px-4 text-center text-slate-400 italic">
                   Chưa nạp danh sách chuẩn hóa sản phẩm. Vui lòng tải file mẫu và nạp để xem bảng tra cứu.
+                </div>
+              ) : filteredProducts.length === 0 ? (
+                <div className="py-6 px-4 text-center text-slate-400 italic text-xs">
+                  Không tìm thấy kết quả nào khớp với “{searchTermProd}”.
                 </div>
               ) : (
                 <table className="w-full text-xs text-left border-collapse">
@@ -950,7 +1077,7 @@ export default function SettingsView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {products.map((prod, index) => (
+                    {filteredProducts.map((prod, index) => (
                       <tr key={index} className="hover:bg-slate-50/50">
                         <td className="px-4 py-2 font-bold text-amber-800 bg-amber-50/5 font-mono">{prod.keyword}</td>
                         <td className="px-4 py-2 font-mono text-indigo-650 font-bold">{prod.maVuViec}</td>

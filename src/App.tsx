@@ -37,9 +37,9 @@ const DEFAULT_RULES = [
 const DEFAULT_CONFIG: ContractSettings = {
   taxRate: 8,
   agencyFeeRate: 12,
-  requiredHeadersLuanChuyen: ['Mã Hợp Đồng', 'Khách Hàng', 'Thành Tiền (VND)'],
-  requiredHeadersHopDongMoi: ['Mã Yêu Cầu', 'Tên Đối Tác', 'Giá Trị Gói (VND)'],
-  requiredHeadersBangKe: ['STT', 'Kênh Phân Phối', 'Tổng Chi Phí (VND)'],
+  requiredHeadersLuanChuyen: ['Mã hợp đồng', 'Tên hợp đồng', 'Tên Khách hàng', 'Tên NVKD', 'Chuyên trang'],
+  requiredHeadersHopDongMoi: ['Số HĐ', 'Tên sale', 'Tên khách hàng', 'Sản phẩm', 'Thành tiền'],
+  requiredHeadersBangKe: ['STT', 'Mã booking', 'Số HT', 'Nội dung quảng cáo', 'Lịch đăng'],
   contractSuffix: 'AD',
   contractNameSeparator: '/',
   exceptionRules: DEFAULT_RULES,
@@ -47,6 +47,7 @@ const DEFAULT_CONFIG: ContractSettings = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.LUAN_CHUYEN);
+  const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
@@ -220,11 +221,13 @@ export default function App() {
             </span>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <span className="flex items-center space-x-1.5 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold leading-none border border-emerald-100">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               <span>Cơ sở hạch toán: 2026</span>
             </span>
+
+            {activeTab === AppTab.LUAN_CHUYEN && headerActions}
 
             <span className="text-xs text-slate-400 font-mono">
               Hệ thống xử lý tệp tin cục bộ an toàn
@@ -245,6 +248,7 @@ export default function App() {
             {activeTab === AppTab.LUAN_CHUYEN && (
               <LuanChuyenView 
                 config={config} 
+                onHeaderActionsChange={setHeaderActions}
               />
             )}
 

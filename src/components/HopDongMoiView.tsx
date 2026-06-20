@@ -14,6 +14,7 @@ import {
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel } from '../utils/excel';
+import { buildFastImportRows } from '../utils/fastImport';
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
 } from '../utils/businessLogic';
@@ -23,6 +24,51 @@ interface HopDongMoiViewProps {
   id?: string;
   config: ContractSettings;
 }
+
+const FIELD_LABELS: Record<string, string> = {
+  maKhach: 'Mã khách',
+  tenKhachHang: 'Tên khách hàng',
+  boPhanThucHien: 'Bộ phận thực hiện',
+  tenSale: 'Tên sale',
+  maVv: 'Mã vụ việc',
+  sanPhamImport: 'Sản phẩm import',
+  tkDoanhThu: 'TK doanh thu',
+  thueSuat: 'Thuế suất',
+  chuyenTrangImport: 'Chuyên trang import',
+  giaTri: 'Giá trị',
+};
+
+function TooltipIcon({ children, tooltip }: { children: React.ReactNode; tooltip: string }) {
+  return (
+    <span className="relative inline-flex items-center group">
+      {children}
+      <span className="pointer-events-none absolute left-full top-1/2 z-[120] ml-2 hidden w-72 -translate-y-1/2 whitespace-normal rounded-md bg-slate-900 px-2.5 py-1.5 text-left text-[10px] font-medium leading-snug text-white shadow-lg group-hover:block">
+        {tooltip}
+      </span>
+    </span>
+  );
+}
+
+const mergeUploadedFiles = (files: UploadedFileData[], label: string): UploadedFileData | null => {
+  if (files.length === 0) return null;
+
+  const headers = new Set<string>();
+  const rows: Record<string, any>[] = [];
+
+  files.forEach((file) => {
+    const primarySheet = file.sheets[0];
+    if (!primarySheet) return;
+    primarySheet.headers.forEach((header) => headers.add(header));
+    primarySheet.rows.forEach((row) => rows.push({ ...row, __sourceFile: file.fileName }));
+  });
+
+  return {
+    fileName: files.length === 1 ? files[0].fileName : `${label} (${files.length} file)`,
+    fileSize: files.reduce((total, file) => total + file.fileSize, 0),
+    uploadedAt: files[0].uploadedAt,
+    sheets: [{ sheetName: label, headers: Array.from(headers), rows }],
+  };
+};
 
 export default function HopDongMoiView({
   id = 'hop-dong-moi-view',
@@ -35,18 +81,54 @@ export default function HopDongMoiView({
   const [loadingMaster, setLoadingMaster] = useState(true);
 
   // Files uploaded by accountant
-  const [fileMoi, setFileMoi] = useState<UploadedFileData | null>(null);
-  const [fileFast, setFileFast] = useState<UploadedFileData | null>(null);
+  const [fileMoiList, setFileMoiList] = useState<UploadedFileData[]>([]);
+  const [fileFastList, setFileFastList] = useState<UploadedFileData[]>([]);
 
   // Processing results and errors
   const [processedRows, setProcessedRows] = useState<Record<string, any>[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Filtering & Pagination
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState(true); // Default: Filter out rows that exist in Fast
+  const [vvConfidenceRange, setVvConfidenceRange] = useState({ from: '', to: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 15;
+
+  const fileMoi = useMemo(() => mergeUploadedFiles(fileMoiList, 'Hợp đồng mới'), [fileMoiList]);
+  const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
+
+  const confirmResetProcessedData = () => {
+    if (!processedRows) return true;
+    const ok = window.confirm(
+      'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?'
+    );
+    if (ok) {
+      setProcessedRows(null);
+      setCurrentPage(1);
+      setActiveAutocomplete(null);
+    }
+    return ok;
+  };
+
+  const replaceUploadedFiles = (
+    files: UploadedFileData[],
+    setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
+  ) => {
+    if (!confirmResetProcessedData()) return;
+    setter(files);
+    setProcessedRows(null);
+  };
+
+  const removeUploadedFile = (
+    index: number,
+    setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
+  ) => {
+    if (!confirmResetProcessedData()) return;
+    setter((files) => files.filter((_, fileIndex) => fileIndex !== index));
+    setProcessedRows(null);
+  };
 
   // Active inputs autocomplete manager
   const [activeAutocomplete, setActiveAutocomplete] = useState<{
@@ -114,16 +196,21 @@ export default function HopDongMoiView({
 
   // Run mapping engine and compare with Fast list
   const handleProcessContracts = () => {
+    if (isProcessing) return;
+
     if (!fileMoi || fileMoi.sheets.length === 0) {
       setErrorMessage('Vui lòng tải lên "File Hợp đồng mới" trước khi hạch toán.');
       return;
     }
 
-    setErrorMessage(null);
-    const sheetMoi = fileMoi.sheets[0];
-    const sheetFast = fileFast && fileFast.sheets.length > 0 ? fileFast.sheets[0] : null;
+    setIsProcessing(true);
+    window.setTimeout(() => {
+      try {
+        setErrorMessage(null);
+        const sheetMoi = fileMoi.sheets[0];
+        const sheetFast = fileFast && fileFast.sheets.length > 0 ? fileFast.sheets[0] : null;
 
-    const mapped = sheetMoi.rows.map((row, index) => {
+        const mapped = sheetMoi.rows.map((row, index) => {
       // 1. extract literal values
       const soHd = getCellValue(row, 'Số HĐ', 'So HD', 'Mã yêu cầu', 'Hợp đồng', 'Số HĐ nhận việc').trim();
       const tenSale = getCellValue(row, 'Tên sale', 'Ten sale', 'Sale', 'Tên NVKD', 'Người bán').trim();
@@ -246,17 +333,17 @@ export default function HopDongMoiView({
 
         ngayHd1: getCellValue(row, 'ngay_hd1').trim(),
         ngayHd2: getCellValue(row, 'ngay_hd2').trim(),
-        ngay_hd3: getCellValue(row, 'ngay_hd3').trim(),
-        ngay_hd4: getCellValue(row, 'ngay_hd4').trim(),
-        ngay_hd5: getCellValue(row, 'ngay_hd5').trim(),
-        ngay_hd6: getCellValue(row, 'ngay_hd6').trim(),
+        ngayHd3: getCellValue(row, 'ngay_hd3').trim(),
+        ngayHd4: getCellValue(row, 'ngay_hd4').trim(),
+        ngayHd5: getCellValue(row, 'ngay_hd5').trim(),
+        ngayHd6: getCellValue(row, 'ngay_hd6').trim(),
 
         tienHd1: getCellValue(row, 'tien_hd1').trim(),
         tienHd2: getCellValue(row, 'tien_hd2').trim(),
         tienHd3: getCellValue(row, 'tien_hd3').trim(),
-        tien_hd4: getCellValue(row, 'tien_hd4').trim(),
-        tien_hd5: getCellValue(row, 'tien_hd5').trim(),
-        tien_hd6: getCellValue(row, 'tien_hd6').trim(),
+        tienHd4: getCellValue(row, 'tien_hd4').trim(),
+        tienHd5: getCellValue(row, 'tien_hd5').trim(),
+        tienHd6: getCellValue(row, 'tien_hd6').trim(),
 
         giaTri: thanhTien, // Price mapped to 'Thành tiền' (as pre-VAT standard for Fast system)
         maVv,
@@ -287,8 +374,14 @@ export default function HopDongMoiView({
       };
     });
 
-    setProcessedRows(mapped);
-    setCurrentPage(1);
+        setProcessedRows(mapped);
+        setCurrentPage(1);
+      } catch (err: any) {
+        setErrorMessage(err?.message || 'Có lỗi xảy ra khi xử lý dữ liệu.');
+      } finally {
+        window.setTimeout(() => setIsProcessing(false), 450);
+      }
+    }, 0);
   };
 
   // Inline column updates
@@ -298,6 +391,13 @@ export default function HopDongMoiView({
       if (row.id !== rowId) return row;
 
       const newRow = { ...row, [field]: value };
+      const changedManually = String(row[field] ?? '') !== String(value ?? '');
+      if (changedManually) {
+        newRow.manualChanges = {
+          ...(row.manualChanges || {}),
+          [field]: true,
+        };
+      }
 
       // Re-trigger product lookup implications if Mã Vụ việc changes
       if (field === 'maVv') {
@@ -411,7 +511,8 @@ export default function HopDongMoiView({
   // "Lọc các dòng có Tên hợp đồng không tồn tại trong Fast"
   const shouldKeepRow = (row: any) => {
     if (filterActive && fileFast) {
-      return !row.existsInFast;
+      const isStatus2 = String(row.fastStatus).trim() === '2';
+      return !row.existsInFast || isStatus2;
     }
     return true;
   };
@@ -423,6 +524,13 @@ export default function HopDongMoiView({
     return processedRows.filter(row => {
       // 1. fast list duplicate checks
       if (!shouldKeepRow(row)) return false;
+
+      const rangeFrom = vvConfidenceRange.from === '' ? 0 : Math.max(0, Math.min(100, Number(vvConfidenceRange.from)));
+      const rangeTo = vvConfidenceRange.to === '' ? 100 : Math.max(0, Math.min(100, Number(vvConfidenceRange.to)));
+      const lowerConfidence = Math.min(rangeFrom, rangeTo);
+      const upperConfidence = Math.max(rangeFrom, rangeTo);
+      const rowConfidence = Number(row.confidenceScore || 0);
+      if ((vvConfidenceRange.from !== '' || vvConfidenceRange.to !== '') && (rowConfidence < lowerConfidence || rowConfidence > upperConfidence)) return false;
 
       // 2. text matching
       if (searchTerm.trim()) {
@@ -438,7 +546,7 @@ export default function HopDongMoiView({
 
       return true;
     });
-  }, [processedRows, filterActive, fileFast, searchTerm]);
+  }, [processedRows, filterActive, fileFast, vvConfidenceRange, searchTerm]);
 
   // Pagination bounds
   const paginatedRows = useMemo(() => {
@@ -504,46 +612,7 @@ export default function HopDongMoiView({
       if (!confirmExport) return;
     }
 
-    const dataExcel = filteredRows.map((row, index) => {
-      return {
-        'Mã hợp đồng': row.maHopDong || '',
-        'Tên hợp đồng': row.tenHopDong || '',
-        'Mã khách': row.maKhach || '',
-        'Bộ phân thưc hiện': row.boPhanThucHien || '',
-        'Ngày bắt đầu': row.ngayBatDau || '',
-        'Ngày kết thúc': row.ngayKetThuc || '',
-        'Ngày hợp đồng': row.ngayHopDong || '',
-        'ngay_hd1': row.ngayHd1 || '',
-        'ngay_hd2': row.ngayHd2 || '',
-        'ngay_hd3': row.ngay_hd3 || '',
-        'ngay_hd4': row.ngay_hd4 || '',
-        'ngay_hd5': row.ngay_hd5 || '',
-        'ngay_hd6': row.ngay_hd6 || '',
-        'tien_hd1': row.tienHd1 || '',
-        'tien_hd2': row.tienHd2 || '',
-        'tien_hd3': row.tien_hd3 || '',
-        'tien_hd4': row.tien_hd4 || '',
-        'tien_hd5': row.tien_hd5 || '',
-        'tien_hd6': row.tien_hd6 || '',
-        'Giá trị': row.giaTri || 0,
-        'ma_vv': row.maVv || '',
-        'Số lượng': row.soLuong || 0,
-        'Đơn giá': row.donGia || 0,
-        'Thuế suất': row.thueSuat !== undefined ? row.thueSuat : 0,
-        'Giá trị của vv VAT': row.giaTriCuaVvVat || 0,
-        'tk_doanh thu': row.tkDoanhThu || '',
-        'Bảng kê': row.bangKe || '',
-        'Tỷ lệ ck': row.tyLeCk || 0,
-        'Chuyên trang': row.chuyenTrangImport || '',
-        'Ghi chú chi tiết': row.ghiChu || '',
-        ' ': '', // Empty blank block 1
-        'Status': 2, // Mặc định Status = 2
-        '  ': '', // Empty blank block 2
-        'Ghi chú tổng': row.fastGhiChu || '',
-        'stt': index + 1,
-        'Tên sản phẩm': row.sanPhamImport || '',
-      };
-    });
+    const dataExcel = buildFastImportRows(filteredRows, { status: 2, sttMode: 'blank' });
 
     exportToExcel(
       [{ sheetName: 'HĐ Mới Fast Import', data: dataExcel }],
@@ -570,7 +639,7 @@ export default function HopDongMoiView({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Upload 1: New contracts */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3.5">
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm space-y-2.5">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono flex items-center space-x-1.5">
               <span className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg font-bold">1</span>
@@ -590,17 +659,41 @@ export default function HopDongMoiView({
             Xem xét trích xuất Mã KH, Bộ phận thực hiện, Mã vụ việc (gộp Sản phẩm + Banner), Số lượng và Tính thuế suất.
           </p>
           <ExcelUpload
+            multiple
+            compact
+            showSuccessDetails={false}
             onUploadSuccess={(data) => {
-              setFileMoi(data);
-              setProcessedRows(null);
+              replaceUploadedFiles([data], setFileMoiList);
+            }}
+            onUploadManySuccess={(data) => {
+              replaceUploadedFiles(data, setFileMoiList);
             }}
             onUploadError={(err) => setErrorMessage(err)}
-            placeholderText="Kéo thả File Hợp đồng mới (.xlsx, .xls) vào đây hoặc click để chọn"
+            placeholderText="Kéo thả một hoặc nhiều File Hợp đồng mới (.xlsx, .xls) vào đây hoặc click để chọn"
           />
+          {fileMoiList.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">File đã tải lên ({fileMoiList.length})</div>
+              <div className="space-y-1">
+                {fileMoiList.map((file, index) => (
+                  <div key={`${file.fileName}_${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] font-semibold text-slate-700" title={file.fileName}>
+                        {file.fileName} <span className="text-slate-400 font-mono">({file.sheets[0]?.rows.length || 0} dòng)</span>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => removeUploadedFile(index, setFileMoiList)} title="Xóa file này khỏi danh sách xử lý" className="h-6 w-6 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Upload 2: Fast contracts list (optional/filter matching) */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3.5">
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm space-y-2.5">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono flex items-center space-x-1.5">
               <span className="p-1.5 bg-rose-50 text-rose-600 rounded-lg font-bold">2</span>
@@ -620,13 +713,37 @@ export default function HopDongMoiView({
             Để tự động lọc bớt các hợp đồng mới đã được đẩy/đăng ký trong hệ thống Fast (so khớp mã và tên hợp đồng).
           </p>
           <ExcelUpload
+            multiple
+            compact
+            showSuccessDetails={false}
             onUploadSuccess={(data) => {
-              setFileFast(data);
-              setProcessedRows(null);
+              replaceUploadedFiles([data], setFileFastList);
+            }}
+            onUploadManySuccess={(data) => {
+              replaceUploadedFiles(data, setFileFastList);
             }}
             onUploadError={(err) => setErrorMessage(err)}
-            placeholderText="Kéo thả Danh sách hợp đồng Fast (.xlsx, .xls) hoặc click để chọn"
+            placeholderText="Kéo thả một hoặc nhiều Danh sách hợp đồng Fast (.xlsx, .xls) hoặc click để chọn"
           />
+          {fileFastList.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">File đã tải lên ({fileFastList.length})</div>
+              <div className="space-y-1">
+                {fileFastList.map((file, index) => (
+                  <div key={`${file.fileName}_${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] font-semibold text-slate-700" title={file.fileName}>
+                        {file.fileName} <span className="text-slate-400 font-mono">({file.sheets[0]?.rows.length || 0} dòng)</span>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => removeUploadedFile(index, setFileFastList)} title="Xóa file này khỏi danh sách đối soát Fast" className="h-6 w-6 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
@@ -646,10 +763,11 @@ export default function HopDongMoiView({
           </div>
           <button
             onClick={handleProcessContracts}
-            className="w-full sm:w-auto flex items-center justify-center space-x-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
+            disabled={isProcessing}
+            className="w-full sm:w-auto flex items-center justify-center space-x-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-wait text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
           >
-            <Calculator className="h-4.5 w-4.5" />
-            <span>HẠCH TOÁN & LOẠI TRÙNG FAST</span>
+            {isProcessing ? <RefreshCw className="h-4.5 w-4.5 animate-spin" /> : <Calculator className="h-4.5 w-4.5" />}
+            <span>{isProcessing ? 'ĐANG XỬ LÝ...' : 'HẠCH TOÁN & LOẠI TRÙNG FAST'}</span>
           </button>
         </div>
       )}
@@ -658,6 +776,13 @@ export default function HopDongMoiView({
         <div className="bg-rose-50 border border-rose-150 p-4 rounded-xl text-rose-800 text-xs flex items-start space-x-2.5">
           <XCircle className="h-5 w-5 text-rose-500 mt-0.5 flex-shrink-0" />
           <p className="font-medium">{errorMessage}</p>
+        </div>
+      )}
+
+      {isProcessing && (
+        <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-indigo-700 text-xs font-bold flex items-center gap-2 shadow-sm">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          <span>Đang xử lý dữ liệu Excel...</span>
         </div>
       )}
 
@@ -780,6 +905,56 @@ export default function HopDongMoiView({
                 </label>
               )}
 
+              <div className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 ${
+                vvConfidenceRange.from !== '' || vvConfidenceRange.to !== ''
+                  ? 'bg-emerald-900/30 text-emerald-100 border-emerald-600/60'
+                  : 'bg-slate-800 text-slate-300 border-slate-700'
+              }`}>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span className="text-xs font-bold whitespace-nowrap">Khớp ma_vv</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="Từ"
+                  value={vvConfidenceRange.from}
+                  onChange={(e) => {
+                    setVvConfidenceRange((prev) => ({ ...prev, from: e.target.value }));
+                    setCurrentPage(1);
+                  }}
+                  className="w-12 bg-slate-900/60 border border-slate-700 rounded-md px-1.5 py-0.5 text-right text-xs font-bold font-mono text-white focus:outline-none focus:border-emerald-400"
+                  aria-label="Phần trăm mã vụ việc khớp từ"
+                />
+                <span className="text-[10px] font-bold text-slate-400">-</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="Đến"
+                  value={vvConfidenceRange.to}
+                  onChange={(e) => {
+                    setVvConfidenceRange((prev) => ({ ...prev, to: e.target.value }));
+                    setCurrentPage(1);
+                  }}
+                  className="w-12 bg-slate-900/60 border border-slate-700 rounded-md px-1.5 py-0.5 text-right text-xs font-bold font-mono text-white focus:outline-none focus:border-emerald-400"
+                  aria-label="Phần trăm mã vụ việc khớp đến"
+                />
+                <span className="text-xs font-bold">%</span>
+                {(vvConfidenceRange.from !== '' || vvConfidenceRange.to !== '') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVvConfidenceRange({ from: '', to: '' });
+                      setCurrentPage(1);
+                    }}
+                    title="Xóa khoảng lọc % khớp ma_vv"
+                    className="h-4 w-4 flex items-center justify-center rounded-full text-emerald-200 hover:bg-emerald-800"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
             </div>
 
             <button
@@ -835,13 +1010,33 @@ export default function HopDongMoiView({
                       const isMissingVv = !row.maVv || !row.maVv.trim();
                       const isMissingThue = row.thueSuat === undefined || row.thueSuat === null || isNaN(row.thueSuat);
                       const isLowConfidence = row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70;
+                      const rowWarnings = [
+                        isMissingKhach ? 'Thiếu Mã khách' : '',
+                        isMissingDept ? 'Thiếu Bộ phận thực hiện' : '',
+                        isMissingVv ? 'Thiếu Mã vụ việc' : '',
+                        isMissingThue ? 'Thiếu Thuế suất' : '',
+                        !isMissingVv && isLowConfidence ? `Mã vụ việc khớp thấp (${row.confidenceScore || 0}%)` : '',
+                      ].filter(Boolean);
+                      const manualFields = Object.keys(row.manualChanges || {}).map((field) => FIELD_LABELS[field] || field);
 
                       return (
                         <tr key={row.id} className="hover:bg-slate-50/50 transition duration-150">
                           
                           {/* Indexes */}
                           <td className="py-3 px-3 text-center text-slate-450 font-mono font-bold border-r border-slate-100">
-                            {absoluteIndex}
+                            <div className="flex items-center justify-center gap-1.5">
+                              <span>{absoluteIndex}</span>
+                              {manualFields.length === 0 && rowWarnings.length > 0 && (
+                                <TooltipIcon tooltip={`Cảnh báo: ${rowWarnings.join('; ')}`}>
+                                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                                </TooltipIcon>
+                              )}
+                              {manualFields.length > 0 && (
+                                <TooltipIcon tooltip={`Đã sửa thủ công: ${manualFields.join(', ')}`}>
+                                  <Info className="h-3.5 w-3.5 text-sky-500" />
+                                </TooltipIcon>
+                              )}
+                            </div>
                           </td>
 
                           {/* Code & Name Contract */}
@@ -880,7 +1075,7 @@ export default function HopDongMoiView({
 
                             {/* Options Dropdown */}
                             {activeAutocomplete?.rowId === row.id && activeAutocomplete?.field === 'maKhach' && (
-                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto w-64 p-1 text-left">
+                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-72 overflow-y-auto w-96 p-1 text-left">
                                 <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider p-1.5 font-mono border-b bg-slate-50 flex items-center justify-between">
                                   <span>Tìm Mã Khách Master</span>
                                   <button type="button" onClick={() => setActiveAutocomplete(null)} className="text-slate-400 hover:text-slate-600">×</button>
@@ -897,10 +1092,13 @@ export default function HopDongMoiView({
                                         handleUpdateField(row.id, 'tenKhachHang', c.tenKhach);
                                         setActiveAutocomplete(null);
                                       }}
-                                      className="w-full text-left p-1.5 hover:bg-slate-50 rounded flex flex-col transition text-[11px]"
+                                      className="group relative w-full text-left p-2 hover:bg-indigo-50/60 rounded flex flex-col transition text-[11px]"
                                     >
-                                      <span className="font-bold text-indigo-700 font-mono">{c.maKhach}</span>
-                                      <span className="text-slate-500 font-sans truncate">{c.tenKhach}</span>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <span className="font-bold text-indigo-700 font-mono shrink-0">{c.maKhach}</span>
+                                        <span className="text-[10px] text-slate-400 font-mono">STT: {c.stt || 'N/A'}</span>
+                                      </div>
+                                      <span className="text-slate-700 font-semibold font-sans leading-snug break-words">{c.tenKhach}</span>
                                     </button>
                                   ))
                                 )}
@@ -926,7 +1124,7 @@ export default function HopDongMoiView({
 
                             {/* Options Dropdown */}
                             {activeAutocomplete?.rowId === row.id && activeAutocomplete?.field === 'boPhanThucHien' && (
-                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto w-64 p-1 text-left">
+                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-72 overflow-y-auto w-96 p-1 text-left">
                                 <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider p-1.5 font-mono border-b bg-slate-50 flex items-center justify-between">
                                   <span>Bộ Phận / Sale phòng ban</span>
                                   <button type="button" onClick={() => setActiveAutocomplete(null)} className="text-slate-400 hover:text-slate-600">×</button>
@@ -943,10 +1141,13 @@ export default function HopDongMoiView({
                                         handleUpdateField(row.id, 'tenSale', d.tenBoPhan);
                                         setActiveAutocomplete(null);
                                       }}
-                                      className="w-full text-left p-1.5 hover:bg-slate-50 rounded flex flex-col transition text-[11px]"
+                                      className="group relative w-full text-left p-2 hover:bg-indigo-50/60 rounded flex flex-col transition text-[11px]"
                                     >
-                                      <span className="font-bold text-indigo-700 font-mono">{d.maSale}</span>
-                                      <span className="text-slate-500 font-sans truncate">{d.tenBoPhan}</span>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <span className="font-bold text-indigo-700 font-mono shrink-0">{d.maSale}</span>
+                                        <span className="text-[10px] text-slate-400 font-mono">STT: {d.stt || 'N/A'}</span>
+                                      </div>
+                                      <span className="text-slate-700 font-semibold font-sans leading-snug break-words">{d.tenBoPhan}</span>
                                     </button>
                                   ))
                                 )}
@@ -977,7 +1178,7 @@ export default function HopDongMoiView({
 
                             {/* Dropdown */}
                             {activeAutocomplete?.rowId === row.id && activeAutocomplete?.field === 'maVv' && (
-                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto w-72 p-1 text-left">
+                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-80 overflow-y-auto w-[28rem] p-1 text-left">
                                 <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider p-1.5 font-mono border-b bg-slate-50 flex items-center justify-between">
                                   <span>Chọn Vụ Việc Master</span>
                                   <button type="button" onClick={() => setActiveAutocomplete(null)} className="text-slate-400 hover:text-slate-600">×</button>
@@ -993,14 +1194,14 @@ export default function HopDongMoiView({
                                         handleUpdateField(row.id, 'maVv', p.maVuViec);
                                         setActiveAutocomplete(null);
                                       }}
-                                      className="w-full text-left p-2 hover:bg-slate-50 rounded flex flex-col transition text-[11px]"
+                                      className="group relative w-full text-left p-2 hover:bg-indigo-50/60 rounded flex flex-col transition text-[11px]"
                                     >
                                       <div className="flex items-center justify-between">
                                         <span className="font-mono font-bold text-indigo-755">{p.maVuViec}</span>
-                                        <span className="text-[10px] font-mono bg-slate-100 rounded px-1 text-slate-500">{p.tkDoanhThu}</span>
+                                        <span className="text-[10px] font-mono bg-slate-100 rounded px-1.5 py-0.5 text-slate-500">TK: {p.tkDoanhThu || 'N/A'}</span>
                                       </div>
-                                      <span className="text-slate-600 font-sans mt-0.5 truncate">{p.tenSanPham}</span>
-                                      <span className="text-[9px] text-slate-400 italic mt-0.5 block">Nhận dạng: {p.keyword}</span>
+                                      <span className="text-slate-700 font-semibold font-sans mt-0.5 leading-snug break-words">{p.tenSanPham}</span>
+                                      <span className="text-[10px] text-slate-500 leading-snug break-words">Nhận dạng: {p.keyword}</span>
                                     </button>
                                   ))
                                 )}
@@ -1027,7 +1228,7 @@ export default function HopDongMoiView({
 
                             {/* Dropdown */}
                             {activeAutocomplete?.rowId === row.id && activeAutocomplete?.field === 'sanPhamImport' && (
-                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto w-72 p-1 text-left">
+                              <div className="absolute left-3 top-11 z-[99] bg-white border border-slate-200 rounded-lg shadow-xl max-h-80 overflow-y-auto w-[28rem] p-1 text-left">
                                 <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider p-1.5 font-mono border-b bg-slate-50 flex items-center justify-between">
                                   <span>Chọn Sản phẩm Standard</span>
                                   <button type="button" onClick={() => setActiveAutocomplete(null)} className="text-slate-400 hover:text-slate-600">×</button>
@@ -1043,10 +1244,10 @@ export default function HopDongMoiView({
                                         handleUpdateField(row.id, 'sanPhamImport', p.tenSanPham);
                                         setActiveAutocomplete(null);
                                       }}
-                                      className="w-full text-left p-2 hover:bg-slate-50 rounded flex flex-col transition text-[11px]"
+                                      className="group relative w-full text-left p-2 hover:bg-indigo-50/60 rounded flex flex-col transition text-[11px]"
                                     >
-                                      <span className="font-bold text-slate-700 truncate">{p.tenSanPham}</span>
-                                      <span className="text-[9px] text-slate-400 font-mono mt-0.5">Mã: {p.maVuViec} | Doanh thu: {p.tkDoanhThu}</span>
+                                      <span className="font-bold text-slate-700 leading-snug break-words">{p.tenSanPham}</span>
+                                      <span className="text-[10px] text-slate-500 leading-snug break-words">Mã: {p.maVuViec} | TK: {p.tkDoanhThu || 'N/A'} | Từ khóa: {p.keyword}</span>
                                     </button>
                                   ))
                                 )}
