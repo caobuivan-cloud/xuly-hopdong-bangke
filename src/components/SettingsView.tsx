@@ -13,12 +13,17 @@ import {
   ContractSettings, ExceptionRule, DepartmentMaster, CustomerMaster, ProductMaster 
 } from '../types';
 import { downloadTemplate, parseExcelFile } from '../utils/excel';
-import { dbService } from '../services/dbService';
+import { dbService, hasValidGoogleSheetsUrl } from '../services/dbService';
 
 interface SettingsViewProps {
   id?: string;
   config: ContractSettings;
   onSaveConfig: (updated: ContractSettings) => void;
+  isSyncing?: boolean;
+  syncError?: string | null;
+  lastSynced?: string | null;
+  onManualPull?: () => Promise<any>;
+  onManualPush?: (currentConfig: ContractSettings) => Promise<any>;
 }
 
 // Utility to remove Vietnamese diacritics and make string lowercase for robust matching
@@ -36,7 +41,13 @@ export default function SettingsView({
   id = 'settings-view',
   config,
   onSaveConfig,
+  isSyncing = false,
+  syncError = null,
+  lastSynced = null,
+  onManualPull,
+  onManualPush,
 }: SettingsViewProps) {
+
   // General configs settings states
   const [taxRate, setTaxRate] = useState(config.taxRate);
   const [agencyFee, setAgencyFee] = useState(config.agencyFeeRate);
@@ -75,16 +86,56 @@ export default function SettingsView({
     target: 'bophan' | 'khach' | 'sanpham' | null;
   }>({ type: null, message: '', target: null });
 
+  const loadMasters = async () => {
+    const depts = await dbService.getDepartments();
+    const custs = await dbService.getCustomers();
+    const prods = await dbService.getProducts();
+    setDepartments(depts);
+    setCustomers(custs);
+    setProducts(prods);
+  };
+
+  const [showGasInstructions, setShowGasInstructions] = useState(false);
+  const [showSyncSuccess, setShowSyncSuccess] = useState(false);
+  const [syncLocalError, setSyncLocalError] = useState<string | null>(null);
+
+  const handlePullGoogleSheets = async () => {
+    if (!onManualPull) return;
+    setSyncLocalError(null);
+    try {
+      await onManualPull();
+      await loadMasters();
+      setShowSyncSuccess(true);
+      setTimeout(() => setShowSyncSuccess(false), 3000);
+    } catch (err: any) {
+      setSyncLocalError(err?.message || "Lỗi đồng bộ tải");
+    }
+  };
+
+  const handlePushGoogleSheets = async () => {
+    if (!onManualPush) return;
+    if (!window.confirm("Bạn có chắc chắn muốn ghi đè toàn bộ dữ liệu cấu hình và master data hiện tại từ Local lên Google Sheets không?")) return;
+    setSyncLocalError(null);
+    try {
+      await onManualPush({
+        taxRate,
+        agencyFeeRate: agencyFee,
+        requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+        requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+        requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+        contractSuffix,
+        contractNameSeparator,
+        exceptionRules,
+      });
+      setShowSyncSuccess(true);
+      setTimeout(() => setShowSyncSuccess(false), 3000);
+    } catch (err: any) {
+      setSyncLocalError(err?.message || "Lỗi đồng bộ gửi");
+    }
+  };
+
   // Load master data on mount
   useEffect(() => {
-    const loadMasters = async () => {
-      const depts = await dbService.getDepartments();
-      const custs = await dbService.getCustomers();
-      const prods = await dbService.getProducts();
-      setDepartments(depts);
-      setCustomers(custs);
-      setProducts(prods);
-    };
     loadMasters();
   }, []);
 
@@ -142,41 +193,40 @@ export default function SettingsView({
 
   // Add/Update exception rules
   const handleAddOrUpdateRule = () => {
-    if (!newKeyword.trim() || !newOutput.trim()) return;
+    const trimmedKeyword = newKeyword.trim();
+    const trimmedOutput = newOutput.trim();
+    if (!trimmedKeyword || !trimmedOutput) return;
 
+    let updatedRules: ExceptionRule[];
     if (editingRuleId) {
-      const updated = exceptionRules.map((r) => 
-        r.id === editingRuleId ? { ...r, keyword: newKeyword.trim(), outputValue: newOutput.trim() } : r
+      updatedRules = exceptionRules.map((r) => 
+        r.id === editingRuleId ? { ...r, keyword: trimmedKeyword, outputValue: trimmedOutput } : r
       );
-      setExceptionRules(updated);
       setEditingRuleId(null);
     } else {
       const newRule: ExceptionRule = {
         id: 'rule_' + Date.now(),
-        keyword: newKeyword.trim(),
-        outputValue: newOutput.trim()
+        keyword: trimmedKeyword,
+        outputValue: trimmedOutput
       };
-      setExceptionRules([...exceptionRules, newRule]);
+      updatedRules = [...exceptionRules, newRule];
     }
 
+    setExceptionRules(updatedRules);
     setNewKeyword('');
     setNewOutput('');
     
     // Auto sync state to parent config
-    setTimeout(() => {
-      onSaveConfig({
-        taxRate,
-        agencyFeeRate: agencyFee,
-        requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        contractSuffix,
-        contractNameSeparator,
-        exceptionRules: editingRuleId 
-          ? exceptionRules.map((r) => r.id === editingRuleId ? { ...r, keyword: newKeyword.trim(), outputValue: newOutput.trim() } : r)
-          : [...exceptionRules, { id: 'rule_' + Date.now(), keyword: newKeyword.trim(), outputValue: newOutput.trim() }],
-      });
-    }, 100);
+    onSaveConfig({
+      taxRate,
+      agencyFeeRate: agencyFee,
+      requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+      requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+      requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+      contractSuffix,
+      contractNameSeparator,
+      exceptionRules: updatedRules,
+    });
   };
 
   const handleEditRule = (rule: ExceptionRule) => {
@@ -190,18 +240,16 @@ export default function SettingsView({
     setExceptionRules(updated);
     
     // Auto sync state to parent config
-    setTimeout(() => {
-      onSaveConfig({
-        taxRate,
-        agencyFeeRate: agencyFee,
-        requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        contractSuffix,
-        contractNameSeparator,
-        exceptionRules: updated,
-      });
-    }, 100);
+    onSaveConfig({
+      taxRate,
+      agencyFeeRate: agencyFee,
+      requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+      requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+      requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+      contractSuffix,
+      contractNameSeparator,
+      exceptionRules: updated,
+    });
   };
 
   // Handle master file upload
@@ -248,6 +296,23 @@ export default function SettingsView({
           message: `Đã tải thành công danh sách mã bộ phận (${formattedDepts.length} dòng).`,
           target,
         });
+
+        if (onManualPush) {
+          onManualPush({
+            taxRate,
+            agencyFeeRate: agencyFee,
+            requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            contractSuffix,
+            contractNameSeparator,
+            exceptionRules,
+          }).then(() => {
+            setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã tự động đồng bộ lên Google Sheets." }));
+          }).catch(err => {
+            setUploadFeedback(prev => ({ ...prev, message: prev.message + " Lỗi tự động đồng bộ lên Sheets: " + err.message, type: 'error' }));
+          });
+        }
       } 
       else if (target === 'khach') {
         // Required logic: Tên khách, Mã khách
@@ -272,6 +337,23 @@ export default function SettingsView({
           message: `Đã tải thành công danh sách mã khách (${formattedCusts.length} dòng).`,
           target,
         });
+
+        if (onManualPush) {
+          onManualPush({
+            taxRate,
+            agencyFeeRate: agencyFee,
+            requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            contractSuffix,
+            contractNameSeparator,
+            exceptionRules,
+          }).then(() => {
+            setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã tự động đồng bộ lên Google Sheets." }));
+          }).catch(err => {
+            setUploadFeedback(prev => ({ ...prev, message: prev.message + " Lỗi tự động đồng bộ lên Sheets: " + err.message, type: 'error' }));
+          });
+        }
       } 
       else if (target === 'sanpham') {
         // Required logic: Cụm từ nhận diện, Chuẩn hóa mã Vụ việc, Chuẩn hóa Tên sản phẩm, TK doanh thu, Thuế suất (nếu có)
@@ -300,6 +382,23 @@ export default function SettingsView({
           message: `Đã hạch toán chuẩn hóa thành công danh mục sản phẩm vụ việc (${formattedProds.length} dòng).`,
           target,
         });
+
+        if (onManualPush) {
+          onManualPush({
+            taxRate,
+            agencyFeeRate: agencyFee,
+            requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+            contractSuffix,
+            contractNameSeparator,
+            exceptionRules,
+          }).then(() => {
+            setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã tự động đồng bộ lên Google Sheets." }));
+          }).catch(err => {
+            setUploadFeedback(prev => ({ ...prev, message: prev.message + " Lỗi tự động đồng bộ lên Sheets: " + err.message, type: 'error' }));
+          });
+        }
       }
     } catch (err: any) {
       setUploadFeedback({
@@ -333,6 +432,23 @@ export default function SettingsView({
       message: 'Đã xóa dữ liệu thành phẩm khỏi bộ nhớ đệm.',
       target,
     });
+
+    if (onManualPush) {
+      onManualPush({
+        taxRate,
+        agencyFeeRate: agencyFee,
+        requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+        requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+        requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+        contractSuffix,
+        contractNameSeparator,
+        exceptionRules,
+      }).then(() => {
+        setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã cập nhật lên Google Sheets." }));
+      }).catch(err => {
+        setUploadFeedback(prev => ({ ...prev, message: prev.message + " Lỗi cập nhật lên Sheets: " + err.message, type: 'error' }));
+      });
+    }
   };
 
   return (
@@ -342,7 +458,7 @@ export default function SettingsView({
         <div>
           <h2 className="text-xl font-extrabold text-slate-800 flex items-center space-x-2">
             <Settings className="h-6 w-6 text-indigo-500" />
-            <span>Tham Số Hệ Thống & Master Data Cấu Hình</span>
+            <span>Setup</span>
           </h2>
           <p className="text-sm text-slate-550 mt-1">
             Quản trị dữ liệu lõi, định dạng tệp, quy chế so khớp hóa đơn, và bảng tra cứu chuẩn hóa.
@@ -534,7 +650,7 @@ export default function SettingsView({
                 <button
                   type="button"
                   onClick={handleAddOrUpdateRule}
-                  className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-650 hover:bg-indigo-750 rounded-lg transition"
+                  className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>{editingRuleId ? 'Sửa Rule' : 'Thêm Rule'}</span>
@@ -595,6 +711,8 @@ export default function SettingsView({
 
         {/* Master Data checklist layout: Column 3 */}
         <div className="space-y-6">
+
+
           <div className="bg-slate-900 text-white rounded-xl p-5 border border-slate-800 shadow-sm space-y-4">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center space-x-1.5">
               <Database className="h-4 w-4 text-indigo-400" />

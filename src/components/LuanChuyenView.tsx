@@ -592,7 +592,7 @@ export default function LuanChuyenView({
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center space-x-2">
             <Layers className="h-6 w-6 text-indigo-500" />
-            <span>Workflow Đối Soát & Hạch Toán Luân Chuyển</span>
+            <span>Xử lý hợp đồng luân chuyển</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
             Hạch toán doanh thu và bóc tách dữ liệu hợp đồng cứng, đối chiếu loại trừ trạng thái hợp đồng Fast và xuất mẫu 36 cột chuẩn hóa.

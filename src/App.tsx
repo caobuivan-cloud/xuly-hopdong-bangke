@@ -3,30 +3,39 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { 
-  AppTab, 
-  ContractSettings 
+import React, { useState, useEffect } from 'react';
+import {
+  AppTab,
+  ContractSettings
 } from './types';
-import { 
-  Settings, 
-  Layers, 
-  FilePlus, 
-  BarChart3, 
-  FolderDown, 
+import {
+  Settings,
+  Layers,
+  FileSpreadsheet,
+  FilePlus,
+  BarChart3,
+  FolderDown,
   Database,
   Calculator,
   ChevronRight,
   ChevronLeft,
   Sparkles,
   HelpCircle,
-  FileSpreadsheet
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 import SettingsView from './components/SettingsView';
 import LuanChuyenView from './components/LuanChuyenView';
 import HopDongMoiView from './components/HopDongMoiView';
 import BangKeView from './components/BangKeView';
 import { downloadTemplate } from './utils/excel';
+import {
+  hasValidGoogleSheetsUrl,
+  pullAllFromGoogleSheets,
+  pushAllToGoogleSheets,
+  GOOGLE_SHEETS_SCRIPT_URL
+} from './services/dbService';
 
 const DEFAULT_RULES = [
   { id: 'rule_1', keyword: 'ADX - Viết nội dung', outputValue: 'Mua gói quảng cáo ADX' },
@@ -67,9 +76,103 @@ export default function App() {
     return DEFAULT_CONFIG;
   });
 
+  // Google Sheets Sync State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
+  const [lastSynced, setLastSynced] = useState<string | null>(() => {
+    return localStorage.getItem('google_sheets_last_synced');
+  });
+
+  // Tự động tải ngầm dữ liệu từ Google Sheets khi mở app
+  useEffect(() => {
+    const autoSync = async () => {
+      if (hasValidGoogleSheetsUrl()) {
+        setIsSyncing(true);
+        setSyncError(null);
+        try {
+          const stats = await pullAllFromGoogleSheets();
+          const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          setLastSynced(timeStr);
+          localStorage.setItem('google_sheets_last_synced', timeStr);
+          
+          // Nạp lại cấu hình mới nhất từ local storage
+          const raw = localStorage.getItem('app_contract_settings');
+          if (raw) {
+            try {
+              setConfig(JSON.parse(raw));
+            } catch (e) {}
+          }
+          
+          setSyncSuccessMsg(`Tự động đồng bộ ngầm thành công lúc ${timeStr}! (KH: ${stats.customersCount} dòng)`);
+          setTimeout(() => setSyncSuccessMsg(null), 6000);
+        } catch (err: any) {
+          console.error("Lỗi đồng bộ Google Sheets tự động:", err);
+          setSyncError(err?.message || "Lỗi đồng bộ tự động");
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+    };
+    autoSync();
+  }, []);
+
+  const handleManualPull = async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncSuccessMsg(null);
+    try {
+      const stats = await pullAllFromGoogleSheets();
+      const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setLastSynced(timeStr);
+      localStorage.setItem('google_sheets_last_synced', timeStr);
+      
+      const raw = localStorage.getItem('app_contract_settings');
+      if (raw) {
+        try {
+          setConfig(JSON.parse(raw));
+        } catch (e) {}
+      }
+      
+      setSyncSuccessMsg(`Đồng bộ thành công! Đã nạp ${stats.customersCount} khách hàng, ${stats.departmentsCount} bộ phận, ${stats.productsCount} sản phẩm.`);
+      setTimeout(() => setSyncSuccessMsg(null), 5000);
+      return stats;
+    } catch (err: any) {
+      setSyncError(err?.message || "Lỗi khi tải dữ liệu từ Sheet");
+      throw err;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleManualPush = async (currentConfig: ContractSettings) => {
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncSuccessMsg(null);
+    try {
+      await pushAllToGoogleSheets(currentConfig);
+      const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setLastSynced(timeStr);
+      localStorage.setItem('google_sheets_last_synced', timeStr);
+      setSyncSuccessMsg(`Đã đẩy toàn bộ dữ liệu cấu hình và master data lên Google Sheet thành công!`);
+      setTimeout(() => setSyncSuccessMsg(null), 5000);
+    } catch (err: any) {
+      setSyncError(err?.message || "Lỗi khi ghi dữ liệu lên Sheet");
+      throw err;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleSaveConfig = (updated: ContractSettings) => {
     setConfig(updated);
     localStorage.setItem('app_contract_settings', JSON.stringify(updated));
+    // Tự động đẩy lên Google Sheet nếu có URL cấu hình
+    if (hasValidGoogleSheetsUrl()) {
+      handleManualPush(updated).catch(err => {
+        console.error("Auto-push config thất bại:", err);
+      });
+    }
   };
 
   const toggleSidebar = () => {
@@ -82,19 +185,18 @@ export default function App() {
 
   // Nav menus
   const navItems = [
-    { id: AppTab.LUAN_CHUYEN, label: 'HĐ luân chuyển', icon: Layers, desc: 'Duyệt mốc luân chuyển' },
-    { id: AppTab.HOP_DONG_MOI, label: 'Hợp đồng mới', icon: FilePlus, desc: 'Tính phí đại lý quảng cáo' },
-    { id: AppTab.BANG_KE, label: 'Bảng kê chi tiết', icon: BarChart3, desc: 'Thống kê CPC & Đạt số KPI' },
-    { id: AppTab.SETTINGS, label: 'Cấu hình hệ thống', icon: Settings, desc: 'Thuế suất & Đối chiếu' },
+    { id: AppTab.LUAN_CHUYEN, label: 'Xử lý hợp đồng luân chuyển', icon: Layers, desc: 'Hợp đồng bản cứng' },
+    { id: AppTab.HOP_DONG_MOI, label: 'Xử lý hợp đồng mới', icon: FilePlus, desc: 'Hợp đồng mới' },
+    { id: AppTab.BANG_KE, label: 'Xử lý bảng kê', icon: BarChart3, desc: 'Bảng kê chứng từ' },
+    { id: AppTab.SETTINGS, label: 'Setup', icon: Settings, desc: 'Cài đặt tham số & Master data' },
   ];
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       {/* Sidebar Navigation */}
-      <aside 
-        className={`${
-          isCollapsed ? 'w-20' : 'w-80'
-        } bg-white text-slate-800 flex flex-col flex-shrink-0 border-r border-slate-200 transition-all duration-300 relative`}
+      <aside
+        className={`${isCollapsed ? 'w-20' : 'w-80'
+          } bg-white text-slate-800 flex flex-col flex-shrink-0 border-r border-slate-200 transition-all duration-300 relative`}
       >
         {/* Toggle Collapse Button sits on the border line list */}
         <button
@@ -143,8 +245,8 @@ export default function App() {
                     title={isCollapsed ? item.label : undefined}
                     className={`w-full flex items-center rounded-xl transition text-left cursor-pointer group
                       ${isCollapsed ? 'justify-center p-3.5' : 'justify-between p-3'}
-                      ${isActive 
-                        ? 'bg-indigo-50 text-indigo-700 shadow-sm font-medium' 
+                      ${isActive
+                        ? 'bg-indigo-50 text-indigo-700 shadow-sm font-medium'
                         : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                       }`}
                   >
@@ -229,9 +331,29 @@ export default function App() {
 
             {activeTab === AppTab.LUAN_CHUYEN && headerActions}
 
-            <span className="text-xs text-slate-400 font-mono">
-              Hệ thống xử lý tệp tin cục bộ an toàn
-            </span>
+            {isSyncing && (
+              <span className="flex items-center space-x-1.5 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-100 animate-pulse">
+                <RefreshCw className="h-3 w-3 animate-spin text-indigo-600" />
+                <span>Đang đồng bộ...</span>
+              </span>
+            )}
+            {syncError && (
+              <span className="flex items-center space-x-1.5 bg-rose-50 text-rose-750 px-3 py-1 rounded-full text-xs font-semibold border border-rose-150" title={syncError}>
+                <AlertCircle className="h-3 w-3 text-rose-600" />
+                <span className="truncate max-w-[150px]">Lỗi: {syncError}</span>
+              </span>
+            )}
+            {syncSuccessMsg && (
+              <span className="flex items-center space-x-1.5 bg-emerald-50 text-emerald-750 px-3 py-1 rounded-full text-xs font-semibold border border-emerald-150">
+                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                <span>{syncSuccessMsg}</span>
+              </span>
+            )}
+            {!isSyncing && !syncError && !syncSuccessMsg && lastSynced && (
+              <span className="text-xs text-slate-400 font-mono">
+                Đồng bộ Sheet: {lastSynced}
+              </span>
+            )}
           </div>
         </header>
 
@@ -239,28 +361,33 @@ export default function App() {
         <div className="flex-1 overflow-y-auto px-8 py-6">
           <div className="max-w-6xl mx-auto">
             {activeTab === AppTab.SETTINGS && (
-              <SettingsView 
-                config={config} 
-                onSaveConfig={handleSaveConfig} 
+              <SettingsView
+                config={config}
+                onSaveConfig={handleSaveConfig}
+                isSyncing={isSyncing}
+                syncError={syncError}
+                lastSynced={lastSynced}
+                onManualPull={handleManualPull}
+                onManualPush={handleManualPush}
               />
             )}
 
             {activeTab === AppTab.LUAN_CHUYEN && (
-              <LuanChuyenView 
-                config={config} 
+              <LuanChuyenView
+                config={config}
                 onHeaderActionsChange={setHeaderActions}
               />
             )}
 
             {activeTab === AppTab.HOP_DONG_MOI && (
-              <HopDongMoiView 
-                config={config} 
+              <HopDongMoiView
+                config={config}
               />
             )}
 
             {activeTab === AppTab.BANG_KE && (
-              <BangKeView 
-                config={config} 
+              <BangKeView
+                config={config}
               />
             )}
           </div>

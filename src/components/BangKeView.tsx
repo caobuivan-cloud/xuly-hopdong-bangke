@@ -685,7 +685,7 @@ export default function BangKeView({
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center space-x-2">
             <Layers className="h-6 w-6 text-indigo-500" />
-            <span>Workflow Hạch Toán Bảng Kê Đối Soát</span>
+            <span>Xử lý bảng kê</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
             Hạch toán phân rã Bảng kê chi tiếp từ Ad-servers sang mã Vụ việc master, đồng bộ lookup thông tin Hợp đồng từ hệ thống Fast, parse khoảng ngày Lịch chạy tự do và xuất file kết quả.

@@ -627,7 +627,7 @@ export default function HopDongMoiView({
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center space-x-2">
             <FilePlus className="h-6 w-6 text-indigo-500" />
-            <span>Workflow Hạch Toán Hợp Đồng Mới</span>
+            <span>Xử lý hợp đồng mới</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
             Hạch toán bóc tách hợp đồng mới ký kết sang mã vụ việc, tự động dán doanh thu, liên kết thuế suất, lọc loại trừ trùng lặp có sẵn trong hệ thống Fast.

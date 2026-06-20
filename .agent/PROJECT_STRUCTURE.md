@@ -17,6 +17,7 @@
 |   |-- utils/
 |       |-- fastImport.ts
 |-- De bai xu ly hop dong bang ke.md
+|-- google_apps_script.js
 |-- index.html
 |-- package.json
 |-- tsconfig.json

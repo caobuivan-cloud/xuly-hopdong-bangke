@@ -3,6 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * CONTRACT: dbService.ts
+ * - Chịu trách nhiệm: 
+ *   1. Định nghĩa và triển khai dịch vụ lưu trữ Master Data cục bộ.
+ *   2. Cung cấp API tích hợp đồng bộ hai chiều bất đồng bộ (batch sync) với Google Sheets Web App.
+ * - Không chịu trách nhiệm: 
+ *   1. Quản lý UI loading, thông tin trạng thái đồng bộ, hoặc parse file Excel thô.
+ * - Ràng buộc (Invariant):
+ *   1. Luôn ưu tiên đọc dữ liệu từ Local Cache (localStorage) trước để đảm bảo UI mượt mà (<50ms).
+ *   2. Các tác vụ sync API phải chạy bất đồng bộ và tự động fallback về localStorage nếu mất mạng/lỗi URL.
+ */
+
 import { DepartmentMaster, CustomerMaster, ProductMaster } from '../types';
 
 /**
@@ -86,3 +98,172 @@ class LocalStorageMasterDataService implements IMasterDataService {
 }
 
 export const dbService: IMasterDataService = new LocalStorageMasterDataService();
+
+// =========================================================================
+// GOOGLE SHEETS SYNC SERVICES
+// =========================================================================
+
+// Người dùng cấu hình URL Apps Script Web App đã deploy tại đây:
+export const GOOGLE_SHEETS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx6l4gM4WbIxaoCJDMpztCpzzIuCiZ7m38wEZdSMI2IjLPNv4bhCs7n1tzgQafomSER/exec";
+
+/**
+ * Kiểm tra xem URL Google Sheets đã được cấu hình hợp lệ hay chưa
+ */
+export function hasValidGoogleSheetsUrl(): boolean {
+  return (
+    typeof GOOGLE_SHEETS_SCRIPT_URL === 'string' &&
+    GOOGLE_SHEETS_SCRIPT_URL.trim() !== '' &&
+    GOOGLE_SHEETS_SCRIPT_URL.startsWith('http') &&
+    !GOOGLE_SHEETS_SCRIPT_URL.includes('_example')
+  );
+}
+
+/**
+ * Tải toàn bộ cấu hình, rules và Master Data từ Google Sheets và lưu đè vào Local Cache.
+ * Thích hợp cho việc chạy ngầm (background pull) hoặc bấm sync thủ công.
+ */
+export async function pullAllFromGoogleSheets(): Promise<{
+  departmentsCount: number;
+  customersCount: number;
+  productsCount: number;
+  configUpdated: boolean;
+}> {
+  if (!hasValidGoogleSheetsUrl()) {
+    throw new Error("Google Sheets Apps Script URL chưa được cấu hình. Vui lòng cập nhật URL thật trong file dbService.ts.");
+  }
+
+  // Gọi API lấy dữ liệu từ Google Sheets
+  const response = await fetch(`${GOOGLE_SHEETS_SCRIPT_URL}?action=read_all`, {
+    method: 'GET',
+    mode: 'cors',
+    headers: {
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Kết nối tới Google Sheets thất bại (HTTP ${response.status})`);
+  }
+
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(`Google Sheets trả về lỗi: ${data.error}`);
+  }
+
+  let configUpdated = false;
+
+  // 1. Lưu cấu hình chung nếu có
+  if (data.config && Object.keys(data.config).length > 0) {
+    const rawLocalConfig = localStorage.getItem('app_contract_settings');
+    let localConfig = {};
+    if (rawLocalConfig) {
+      try { localConfig = JSON.parse(rawLocalConfig); } catch (e) {}
+    }
+    
+    // Gộp cấu hình từ Google Sheets
+    const mergedConfig = {
+      ...localConfig,
+      ...data.config,
+    };
+    
+    // Nếu có exception rules từ Google Sheet, ưu tiên đè lên
+    if (Array.isArray(data.exceptionRules)) {
+      mergedConfig.exceptionRules = data.exceptionRules;
+    }
+
+    localStorage.setItem('app_contract_settings', JSON.stringify(mergedConfig));
+    configUpdated = true;
+  }
+
+  // 2. Lưu Master Bộ phận
+  if (Array.isArray(data.departments)) {
+    // Đảm bảo kiểu số cho stt
+    const formatted = data.departments.map((d: any) => ({
+      stt: isNaN(Number(d.stt)) ? d.stt : Number(d.stt),
+      tenBoPhan: String(d.tenBoPhan || '').trim(),
+      maSale: String(d.maSale || '').trim()
+    })).filter((d: any) => d.tenBoPhan && d.maSale);
+    
+    await dbService.saveDepartments(formatted);
+  }
+
+  // 3. Lưu Master Khách hàng
+  if (Array.isArray(data.customers)) {
+    const formatted = data.customers.map((c: any) => ({
+      stt: isNaN(Number(c.stt)) ? c.stt : Number(c.stt),
+      tenKhach: String(c.tenKhach || '').trim(),
+      maKhach: String(c.maKhach || '').trim()
+    })).filter((c: any) => c.tenKhach && c.maKhach);
+
+    await dbService.saveCustomers(formatted);
+  }
+
+  // 4. Lưu Master Sản phẩm
+  if (Array.isArray(data.products)) {
+    const formatted = data.products.map((p: any) => ({
+      keyword: String(p.keyword || '').trim(),
+      maVuViec: String(p.maVuViec || '').trim(),
+      tenSanPham: String(p.tenSanPham || '').trim(),
+      tkDoanhThu: String(p.tkDoanhThu || '').trim(),
+      thueSuat: p.thueSuat !== undefined && p.thueSuat !== null ? String(p.thueSuat).trim() : undefined
+    })).filter((p: any) => p.keyword && p.maVuViec && p.tenSanPham);
+
+    await dbService.saveProducts(formatted);
+  }
+
+  const currentDepts = await dbService.getDepartments();
+  const currentCusts = await dbService.getCustomers();
+  const currentProds = await dbService.getProducts();
+
+  return {
+    departmentsCount: currentDepts.length,
+    customersCount: currentCusts.length,
+    productsCount: currentProds.length,
+    configUpdated
+  };
+}
+
+/**
+ * Đẩy toàn bộ dữ liệu cấu hình, rules và Master Data từ Local Cache lên Google Sheets.
+ */
+export async function pushAllToGoogleSheets(currentConfig: any): Promise<void> {
+  if (!hasValidGoogleSheetsUrl()) {
+    throw new Error("Google Sheets Apps Script URL chưa được cấu hình. Vui lòng cập nhật URL thật trong file dbService.ts.");
+  }
+
+  // Lấy dữ liệu Master Data hiện tại từ Local
+  const departments = await dbService.getDepartments();
+  const customers = await dbService.getCustomers();
+  const products = await dbService.getProducts();
+
+  // Bóc tách config và exception rules
+  const { exceptionRules, ...configParams } = currentConfig;
+
+  const payload = {
+    action: 'save_all',
+    config: configParams,
+    exceptionRules: exceptionRules || [],
+    departments,
+    customers,
+    products
+  };
+
+  const response = await fetch(GOOGLE_SHEETS_SCRIPT_URL, {
+    method: 'POST',
+    mode: 'cors',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8' // GAS Web Apps thường xử lý POST thô tốt nhất với text/plain để tránh CORS preflight OPTIONS request
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gửi dữ liệu lên Google Sheets thất bại (HTTP ${response.status})`);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || "Không thể lưu dữ liệu lên Google Sheets.");
+  }
+}
+

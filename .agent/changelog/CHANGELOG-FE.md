@@ -8,6 +8,18 @@
 
 ## 2026-06-20
 
+### feat: lưu trữ Google Sheet cho cấu hình và Master Data
+- Triển khai giải pháp đồng bộ dữ liệu ngầm bất đồng bộ (Background Auto-Sync) với Google Sheets Web App thông qua Google Apps Script Web App API.
+- Tự động kéo dữ liệu (Pull) mới nhất từ Google Sheets khi khởi chạy ứng dụng ngầm mà không gây block tiến trình render chính (Local Cache First).
+- Tự động đẩy dữ liệu (Push) đồng bộ lên Google Sheets khi người dùng cập nhật cấu hình/rules hoặc upload tệp Excel Master Data mới.
+- Tự động đồng bộ việc xóa dữ liệu (Clear) Master Data lên Google Sheets dưới nền.
+- Cung cấp file cấu hình mẫu [google_apps_script.js](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/google_apps_script.js) tại root cho người dùng dễ dàng copy.
+- Files:
+  - [App.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/App.tsx)
+  - [SettingsView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/SettingsView.tsx)
+  - [dbService.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/services/dbService.ts)
+  - [google_apps_script.js](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/google_apps_script.js)
+
 ### feat: thêm tính năng tìm kiếm cho danh mục Master Data
 - Thêm ô tìm kiếm với icon Search và nút X xóa nhanh cho cả 3 bảng Master Data (Bộ phận thực hiện, Khách hàng, Sản phẩm/Vụ việc) trong `SettingsView.tsx`.
 - Hỗ trợ tìm kiếm tiếng Việt không dấu/có dấu và không phân biệt hoa thường nhờ tích hợp `stripVietnameseDiacritics`.

@@ -26,3 +26,4 @@ Lưu trữ những **quyết định kiến trúc** quan trọng và **lý do ch
 
 - [2026-06-19] [Khởi tạo bộ tài liệu Agent]. Why: Chuẩn hóa không gian `.agent` để AI context dễ dàng nạp và theo dõi được vòng đời dự án.
 - [2026-06-20] [Tập trung logic xuất 36 cột vào helper chung]. Why: Gom logic ánh xạ 36 cột phục vụ FAST Accounting từ các component BangKeView, HopDongMoiView, LuanChuyenView về một mối (`src/utils/fastImport.ts`) để tránh trôi lệch logic (logic drift) và dễ dàng bảo trì hoặc nâng cấp cấu trúc cột trong tương lai.
+- [2026-06-20] [Lưu trữ Google Sheets với chiến lược Local Cache First]. Why: Cho phép lưu trữ bền vững cấu hình và bảng mã khách hàng lớn (>11k dòng) lên Google Sheet qua Apps Script Web App mà không làm chậm ứng dụng nhờ tải ngầm không đồng bộ và hiển thị tức thời từ localStorage.
