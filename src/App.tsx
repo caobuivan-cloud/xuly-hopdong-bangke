@@ -359,7 +359,7 @@ export default function App() {
         {/* User Workspace Info Footbar */}
         {!isCollapsed && (
           <div className="p-4 border-t border-slate-100 bg-slate-50/40 text-xs text-slate-400 space-y-1 font-mono">
-            <p>Kế toán viên: <span className="text-slate-600 font-semibold">Senior Board</span></p>
+            <p>Kế toán viên: <span className="text-slate-600 font-semibold">{config.userName || 'Kế toán viên'}</span></p>
             <p>Môi trường: <span className="text-emerald-600 font-semibold">AI Studio MVP</span></p>
           </div>
         )}
