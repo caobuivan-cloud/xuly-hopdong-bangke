@@ -838,7 +838,7 @@ export default function SettingsView({
         {/* 1. MASTER DEPARTMENTS (MÃ BỘ PHẬN) */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
           <div className="p-4.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center space-x-3">
                 <span className="text-sm font-bold text-slate-800 uppercase tracking-wider font-mono">Master 1: Danh sách mã bộ phận thực hiện</span>
                 {departments.length > 0 ? (
@@ -856,7 +856,7 @@ export default function SettingsView({
               </p>
             </div>
 
-            <div className="flex items-center flex-wrap gap-2">
+            <div className="flex items-center flex-shrink-0 gap-2">
               <button
                 type="button"
                 onClick={() => downloadTemplate('m_bophan')}
@@ -974,7 +974,7 @@ export default function SettingsView({
         {/* 2. MASTER CUSTOMERS (MÃ KHÁCH HÀNG) */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
           <div className="p-4.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center space-x-3">
                 <span className="text-sm font-bold text-slate-800 uppercase tracking-wider font-mono">Master 2: Bảng tra cứu đối chiếu mã khách hàng</span>
                 {customers.length > 0 ? (
@@ -992,7 +992,7 @@ export default function SettingsView({
               </p>
             </div>
 
-            <div className="flex items-center flex-wrap gap-2">
+            <div className="flex items-center flex-shrink-0 gap-2">
               <button
                 type="button"
                 onClick={() => downloadTemplate('m_khach')}
@@ -1110,7 +1110,7 @@ export default function SettingsView({
         {/* 3. MASTER PRODUCTS STANDARD (DANH SÁCH CHUẨN HÓA SẢN PHẨM/VỤ VIỆC) */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
           <div className="p-4.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center space-x-3">
                 <span className="text-sm font-bold text-slate-800 uppercase tracking-wider font-mono">Master 3: Cấu hình chuẩn hóa Sản Phẩm & Mã Vụ Việc</span>
                 {products.length > 0 ? (
@@ -1128,7 +1128,7 @@ export default function SettingsView({
               </p>
             </div>
 
-            <div className="flex items-center flex-wrap gap-2">
+            <div className="flex items-center flex-shrink-0 gap-2">
               <button
                 type="button"
                 onClick={() => downloadTemplate('m_sanpham')}
