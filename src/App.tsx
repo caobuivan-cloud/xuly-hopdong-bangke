@@ -35,7 +35,8 @@ import {
   pullAllFromGoogleSheets,
   pushAllToGoogleSheets,
   GOOGLE_SHEETS_SCRIPT_URL,
-  writeActionLogToSheet
+  writeActionLogToSheet,
+  getPortalUserEmail
 } from './services/dbService';
 
 const DEFAULT_RULES = [
@@ -94,9 +95,42 @@ export default function App() {
     return localStorage.getItem('google_sheets_last_synced');
   });
 
-  // Ghi nhận log khi khởi động ứng dụng
+  // Tự động tìm kiếm email người dùng trên portal/url khi khởi chạy và ghi nhận log
   useEffect(() => {
-    writeActionLogToSheet("Khởi động ứng dụng", "Đã mở trang đối chiếu Hợp đồng - Bảng kê");
+    const initUserAndLog = async () => {
+      let finalEmail = '';
+      try {
+        // 1. Thử lấy từ URL query hoặc hash (email=...)
+        const hash = window.location.hash || window.location.search;
+        const match = hash.match(/email=([^&]+)/);
+        if (match && match[1]) {
+          finalEmail = decodeURIComponent(match[1]);
+        }
+
+        // 2. Thử lấy từ portal IndexedDB nếu chưa có ở URL
+        if (!finalEmail) {
+          const portalEmail = await getPortalUserEmail();
+          if (portalEmail) {
+            finalEmail = portalEmail;
+          }
+        }
+
+        // Cập nhật cấu hình nếu tìm thấy email mới
+        if (finalEmail) {
+          setConfig(prev => {
+            const updated = { ...prev, userName: finalEmail };
+            localStorage.setItem('app_contract_settings', JSON.stringify(updated));
+            return updated;
+          });
+        }
+      } catch (e) {
+        console.error('Failed to get portal user email:', e);
+      } finally {
+        // Ghi log khởi động ứng dụng
+        writeActionLogToSheet("Khởi động ứng dụng", "Đã mở trang đối chiếu Hợp đồng - Bảng kê");
+      }
+    };
+    initUserAndLog();
   }, []);
 
   // Tự động tải ngầm dữ liệu từ Google Sheets khi mở app
