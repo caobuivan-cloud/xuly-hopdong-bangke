@@ -180,10 +180,11 @@ export async function pullAllFromGoogleSheets(): Promise<{
       try { localConfig = JSON.parse(rawLocalConfig); } catch (e) {}
     }
     
-    // Gộp cấu hình từ Google Sheets
+    // Gộp cấu hình từ Google Sheets, loại bỏ userName để tránh bị đè tên người dùng local
+    const { userName: sheetUserName, ...configFromSheet } = data.config || {};
     const mergedConfig = {
       ...localConfig,
-      ...data.config,
+      ...configFromSheet,
     };
     
     // Nếu có exception rules từ Google Sheet, ưu tiên đè lên
