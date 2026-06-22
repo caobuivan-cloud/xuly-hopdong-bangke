@@ -1,7 +1,7 @@
 # Project Structure - Xu ly hop dong - bang ke
 
 > Tạo ngày: 2026-06-19
-> Cập nhật gần nhất: 2026-06-20
+> Cập nhật gần nhất: 2026-06-22
 > Mục đích: Lưu snapshot cấu trúc codebase để AI có thể onboard và resume nhanh.
 
 ---
@@ -18,10 +18,12 @@
 |-- src/
 |   |-- components/
 |   |   |-- BangKeView.tsx
+|   |   |-- ConfirmModal.tsx
+|   |   |-- ExcelUpload.tsx
 |   |   |-- HopDongMoiView.tsx
 |   |   |-- LuanChuyenView.tsx
+|   |   |-- PreviewTable.tsx
 |   |   |-- SettingsView.tsx
-|   |   |-- ExcelUpload.tsx
 |   |-- services/
 |   |   |-- dbService.ts
 |   |-- utils/
@@ -31,10 +33,13 @@
 |   |-- types.ts
 |   |-- App.tsx
 |   |-- main.tsx
+|-- .env.example
+|-- .gitignore
 |-- De bai xu ly hop dong bang ke.md
 |-- google_apps_script.js
 |-- index.html
 |-- package.json
+|-- README.md
 |-- tsconfig.json
 |-- vite.config.ts
 ```

@@ -18,6 +18,8 @@ Sau khi copy, cấu trúc tối thiểu sẽ là:
 |   |-- README.md
 |   |-- project-init/
 |   |   `-- SKILL.md
+|   |-- codebase-audit/
+|   |   `-- SKILL.md
 |   |-- feature-plan/
 |   |   `-- SKILL.md
 |   |-- feature-review/
@@ -37,8 +39,6 @@ Sau khi copy, cấu trúc tối thiểu sẽ là:
 |   |-- update-docs/
 |   |   `-- SKILL.md
 |   |-- git-sync/
-|   |   `-- SKILL.md
-|   |-- gcloud-deploy/
 |   |   `-- SKILL.md
 |   `-- templates/
 |       |-- CONTEXT.template.md
@@ -60,6 +60,7 @@ Sau khi copy, cấu trúc tối thiểu sẽ là:
 | Skill | Vai trò | Dùng khi nào |
 |------|------|--------------|
 | `project-init` | Scout | Chuẩn hóa, bổ sung, hoặc audit bộ `.agent/` cho repo ở bất kỳ giai đoạn nào, gồm cả việc đưa skill pack vào áp dụng |
+| `codebase-audit` | Auditor | Audit codebase tìm bảo mật, logic, hiệu năng, file rác và chạy test kiểm chứng |
 | `feature-plan` | Architect | Chuyển yêu cầu thành plan và task breakdown |
 | `feature-review` | Reviewer | Soi kiến trúc, security, logic trước khi thực thi trên runtime không có `spawn_agent` |
 | `spawn-agent-review` | Reviewer | Soi kiến trúc, security, logic trước khi thực thi trên Codex runtime có `spawn_agent`, với delegated council review |
@@ -70,7 +71,6 @@ Sau khi copy, cấu trúc tối thiểu sẽ là:
 | `docs-hygiene` | Curator | Rà soát docs stale/dead/orphan, sửa broken paths, và đưa tài liệu giá trị vào read-path của hệ thống |
 | `update-docs` | Librarian | Cập nhật docs, KB, test cases sau thay đổi |
 | `git-sync` | Syncer | Đồng bộ Git sau khi đã chốt docs và commit message |
-| `gcloud-deploy` | Deployer | Deploy ứng dụng lên Google Cloud (Cloud Run & Cloud Build) an toàn có chốt chặn kiểm soát chi phí |
 
 ## Cách gọi
 
@@ -86,6 +86,7 @@ Hoặc:
 
 ```text
 project-init
+codebase-audit
 feature-plan
 feature-review
 spawn-agent-review

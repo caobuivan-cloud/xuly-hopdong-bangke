@@ -44,8 +44,12 @@
 |------|------|
 | [skills/README.md](./skills/README.md) | Tổng quan skill pack và flow chuẩn |
 | [skills/project-init/SKILL.md](./skills/project-init/SKILL.md) | Chuẩn hóa, bổ sung, hoặc audit bộ `.agent/` |
+| [skills/codebase-audit/SKILL.md](./skills/codebase-audit/SKILL.md) | Audit codebase để tìm bug logic, bottleneck hiệu năng và chạy test |
 | [skills/feature-plan/SKILL.md](./skills/feature-plan/SKILL.md) | Lập kế hoạch cho feature mới |
 | [skills/feature-review/SKILL.md](./skills/feature-review/SKILL.md) | Review plan về kiến trúc, bảo mật, logic và rollout |
+| [skills/spawn-agent-review/SKILL.md](./skills/spawn-agent-review/SKILL.md) | Review plan bằng subagents qua spawn_agent |
+| [skills/expert-rebuttal/SKILL.md](./skills/expert-rebuttal/SKILL.md) | Phản biện có bằng chứng các findings từ expert review bên ngoài |
+| [skills/expert-rebuttal-codex/SKILL.md](./skills/expert-rebuttal-codex/SKILL.md) | Sinh findings có bằng chứng từ review của Codex Desktop |
 | [skills/feature-coordinator/SKILL.md](./skills/feature-coordinator/SKILL.md) | Triển khai feature theo phase và checklist |
 | [skills/update-docs/SKILL.md](./skills/update-docs/SKILL.md) | Cập nhật docs sau khi code thay đổi |
 | [skills/check-issue/SKILL.md](./skills/check-issue/SKILL.md) | Điều tra root cause của bug hoặc sự cố |
