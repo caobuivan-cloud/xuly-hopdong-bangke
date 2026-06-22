@@ -243,6 +243,20 @@ export default function HopDongMoiView({
         const sheetMoi = fileMoi.sheets[0];
         const sheetFast = fileFast && fileFast.sheets.length > 0 ? fileFast.sheets[0] : null;
 
+        // Pre-build a hash map for O(1) lookups instead of nested loops
+        const fastLookupMap = new Map<string, { fastStatus: string; fastGhiChu: string }>();
+        if (sheetFast) {
+          sheetFast.rows.forEach(f => {
+            const fastTen = String(getCellValue(f, 'Tên hợp đồng', 'Ten hop dong') || '').trim();
+            const fastCode = String(getCellValue(f, 'Hợp đồng', 'Hop dong', 'Mã hợp đồng', 'Mã HĐ') || '').trim();
+            const status = String(getCellValue(f, 'Trạng thái', 'Trang thai')).trim();
+            const ghiChu = String(getCellValue(f, 'Ghi chú', 'Ghi chu')).trim();
+            const val = { fastStatus: status, fastGhiChu: ghiChu };
+            if (fastTen) fastLookupMap.set(normalizeText(fastTen), val);
+            if (fastCode) fastLookupMap.set(normalizeText(fastCode), val);
+          });
+        }
+
         const mapped = sheetMoi.rows.map((row, index) => {
       // 1. extract literal values
       const soHd = getCellValue(row, 'Số HĐ', 'So HD', 'Mã yêu cầu', 'Hợp đồng', 'Số HĐ nhận việc').trim();
@@ -336,19 +350,12 @@ export default function HopDongMoiView({
       if (sheetFast) {
         const normTenHopDong = normalizeText(tenHopDong);
         const normMaHopDong = normalizeText(maHopDong);
-
-        const matchFastRow = sheetFast.rows.find(f => {
-          const fastTen = String(getCellValue(f, 'Tên hợp đồng', 'Ten hop dong') || '').trim();
-          const fastCode = String(getCellValue(f, 'Hợp đồng', 'Hop dong', 'Mã hợp đồng', 'Mã HĐ') || '').trim();
-          
-          return (fastTen && normalizeText(fastTen) === normTenHopDong) ||
-                 (normMaHopDong && fastCode && normalizeText(fastCode) === normMaHopDong);
-        });
-
-        if (matchFastRow) {
+        const match = (normTenHopDong && fastLookupMap.get(normTenHopDong)) || 
+                      (normMaHopDong && fastLookupMap.get(normMaHopDong));
+        if (match) {
           existsInFast = true;
-          fastStatus = String(getCellValue(matchFastRow, 'Trạng thái', 'Trang thai')).trim();
-          fastGhiChu = String(getCellValue(matchFastRow, 'Ghi chú', 'Ghi chu')).trim();
+          fastStatus = match.fastStatus;
+          fastGhiChu = match.fastGhiChu;
         }
       }
 

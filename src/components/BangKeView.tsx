@@ -258,6 +258,22 @@ export default function BangKeView({
       }
     });
 
+        // Pre-build a hash map for O(1) lookups instead of nested loops
+        const fastLookupMap = new Map<string, { fastStatus: string; fastMaKhach: string; fastBoPhanThucHien: string; fastGhiChu: string }>();
+        if (sheetFast) {
+          sheetFast.rows.forEach(f => {
+            const fastTen = String(getCellValue(f, 'Tên hợp đồng', 'Ten hop dong') || '').trim();
+            const fastCode = String(getCellValue(f, 'Hợp đồng', 'Hop dong', 'Mã hợp đồng', 'Mã HĐ') || '').trim();
+            const status = String(getCellValue(f, 'Trạng thái', 'Trang thai')).trim();
+            const maKhach = String(getCellValue(f, 'Mã khách', 'Ma khach')).trim();
+            const boPhan = String(getCellValue(f, 'Bộ phận thực hiện', 'Bo phan thuc hien', 'BP thực hiện')).trim();
+            const ghiChu = String(getCellValue(f, 'Ghi chú', 'Ghi chu')).trim();
+            const val = { fastStatus: status, fastMaKhach: maKhach, fastBoPhanThucHien: boPhan, fastGhiChu: ghiChu };
+            if (fastTen) fastLookupMap.set(normalizeText(fastTen), val);
+            if (fastCode) fastLookupMap.set(normalizeText(fastCode), val);
+          });
+        }
+
         const mapped = sheetBangKe.rows.map((row, index) => {
       // 1. Raw inputs extracts
       const sttCol = getCellValue(row, 'STT', 'stt', 'No').trim();
@@ -291,21 +307,14 @@ export default function BangKeView({
       if (sheetFast) {
         const normTenHopDong = normalizeText(tenHopDong);
         const normMaHopDong = normalizeText(maHopDong);
-
-        const matchFastRow = sheetFast.rows.find(f => {
-          const fastTen = String(getCellValue(f, 'Tên hợp đồng', 'Ten hop dong') || '').trim();
-          const fastCode = String(getCellValue(f, 'Hợp đồng', 'Hop dong', 'Mã hợp đồng', 'Mã HĐ') || '').trim();
-          
-          return (fastTen && normalizeText(fastTen) === normTenHopDong) ||
-                 (normMaHopDong && fastCode && normalizeText(fastCode) === normMaHopDong);
-        });
-
-        if (matchFastRow) {
+        const match = (normTenHopDong && fastLookupMap.get(normTenHopDong)) || 
+                      (normMaHopDong && fastLookupMap.get(normMaHopDong));
+        if (match) {
           existsInFast = true;
-          fastStatus = String(getCellValue(matchFastRow, 'Trạng thái', 'Trang thai')).trim();
-          fastMaKhach = String(getCellValue(matchFastRow, 'Mã khách', 'Ma khach')).trim();
-          fastBoPhanThucHien = String(getCellValue(matchFastRow, 'Bộ phận thực hiện', 'Bo phan thuc hien', 'BP thực hiện')).trim();
-          fastGhiChu = String(getCellValue(matchFastRow, 'Ghi chú', 'Ghi chu')).trim();
+          fastStatus = match.fastStatus;
+          fastMaKhach = match.fastMaKhach;
+          fastBoPhanThucHien = match.fastBoPhanThucHien;
+          fastGhiChu = match.fastGhiChu;
         }
       }
 
