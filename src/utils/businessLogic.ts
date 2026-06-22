@@ -5,6 +5,52 @@
 
 import { ExceptionRule, ProductMaster } from '../types';
 
+export interface FastContractLookupValue {
+  fastStatus: string;
+  fastMaKhach: string;
+  fastBoPhanThucHien: string;
+  fastGhiChu: string;
+}
+
+export function normalizeContractNameKey(value: any): string {
+  return String(value ?? '').replace(/\s+/g, '').trim().toLowerCase();
+}
+
+export function getRawCellValue(row: any, columnIndex: number): string {
+  if (Array.isArray(row?.__cells)) {
+    const value = row.__cells[columnIndex];
+    if (value !== undefined && value !== null) return String(value).trim();
+  }
+  return '';
+}
+
+export function buildFastContractLookup(rows: any[]): Map<string, FastContractLookupValue> {
+  const lookup = new Map<string, FastContractLookupValue>();
+
+  rows.forEach(row => {
+    const tenHopDong = getRawCellValue(row, 1);
+    const key = normalizeContractNameKey(tenHopDong);
+    if (!key) return;
+
+    lookup.set(key, {
+      fastMaKhach: getRawCellValue(row, 3),
+      fastBoPhanThucHien: getRawCellValue(row, 5),
+      fastStatus: getRawCellValue(row, 8),
+      fastGhiChu: getRawCellValue(row, 13),
+    });
+  });
+
+  return lookup;
+}
+
+export function lookupFastContractByBooking(
+  lookup: Map<string, FastContractLookupValue>,
+  maBooking: string
+): FastContractLookupValue | undefined {
+  if (!maBooking) return undefined;
+  return lookup.get(normalizeContractNameKey(`${maBooking}/AD`));
+}
+
 /**
  * 1. normalizeText(value)
  * - Convert về string.

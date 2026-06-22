@@ -18,7 +18,8 @@ import { exportToExcel } from '../utils/excel';
 import { buildFastImportRows } from '../utils/fastImport';
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
-  parsePostingDateRange, parseContractDateFromBooking
+  parsePostingDateRange, parseContractDateFromBooking, buildFastContractLookup,
+  getRawCellValue, lookupFastContractByBooking
 } from '../utils/businessLogic';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
 import ConfirmModal from './ConfirmModal';
@@ -261,31 +262,83 @@ export default function BangKeView({
     });
 
         // Pre-build a hash map for O(1) lookups instead of nested loops
-        const fastLookupMap = new Map<string, { fastStatus: string; fastMaKhach: string; fastBoPhanThucHien: string; fastGhiChu: string }>();
-        if (sheetFast) {
-          sheetFast.rows.forEach(f => {
-            const fastTen = String(getCellValue(f, 'Tên hợp đồng', 'Ten hop dong') || '').trim();
-            const fastCode = String(getCellValue(f, 'Hợp đồng', 'Hop dong', 'Mã hợp đồng', 'Mã HĐ') || '').trim();
-            const status = String(getCellValue(f, 'Trạng thái', 'Trang thai')).trim();
-            const maKhach = String(getCellValue(f, 'Mã khách', 'Ma khach')).trim();
-            const boPhan = String(getCellValue(f, 'Bộ phận thực hiện', 'Bo phan thuc hien', 'BP thực hiện')).trim();
-            const ghiChu = String(getCellValue(f, 'Ghi chú', 'Ghi chu')).trim();
-            const val = { fastStatus: status, fastMaKhach: maKhach, fastBoPhanThucHien: boPhan, fastGhiChu: ghiChu };
-            if (fastTen) fastLookupMap.set(normalizeText(fastTen), val);
-            if (fastCode) fastLookupMap.set(normalizeText(fastCode), val);
-          });
-        }
-
+        const fastLookupMap = sheetFast ? buildFastContractLookup(sheetFast.rows) : new Map();
         // Pre-normalize products master list to avoid millions of heavy normalizeText calls inside loop
         const preNormalizedProducts = products.map(p => ({
           ...p,
           __normKeyword: normalizeText(p.keyword)
         }));
 
-        const mapped = sheetBangKe.rows.map((row, index) => {
+        // Filter rows up to the "Tổng thành tiền" row
+        const filteredRowsForTable: any[] = [];
+        for (const row of sheetBangKe.rows) {
+          let isTotalRow = false;
+          for (const [key, val] of Object.entries(row)) {
+            if (typeof val !== 'string') continue;
+            const normalizedKey = normalizeText(key);
+            if (normalizedKey.includes('don vi tinh') || normalizedKey === 'dvt') {
+              continue;
+            }
+            const normalizedVal = normalizeText(val);
+            if (
+              // Standard normalized values
+              normalizedVal === 'tong' ||
+              normalizedVal === 'tong cong' ||
+              normalizedVal === 'cong' ||
+              normalizedVal === 'tong thanh tien' ||
+              normalizedVal === 'tong cong thanh tien' ||
+              normalizedVal === 'tong tien' ||
+              normalizedVal === 'tong so tien' ||
+              normalizedVal === 'tong gia tri' ||
+              normalizedVal === 'tong thanh toan' ||
+              normalizedVal === 'tong cong thanh toan' ||
+              normalizedVal === 'cong thanh tien' ||
+              normalizedVal === 'thanh tien' ||
+              normalizedVal === 'cong cong' ||
+              normalizedVal.startsWith('tong thanh tien') ||
+              normalizedVal.startsWith('tong cong') ||
+              normalizedVal.startsWith('tong tien') ||
+              normalizedVal.startsWith('tong so tien') ||
+              normalizedVal.startsWith('tong gia tri') ||
+              normalizedVal.startsWith('tong thanh toan') ||
+              normalizedVal.startsWith('tong cong thanh toan') ||
+              
+              // Decomposed normalized values due to space-insertion normalization bug
+              normalizedVal === 'to ng' ||
+              normalizedVal === 'to ng co ng' ||
+              normalizedVal === 'co ng' ||
+              normalizedVal === 'to ng tha nh tie n' ||
+              normalizedVal === 'to ng co ng tha nh tie n' ||
+              normalizedVal === 'to ng tie n' ||
+              normalizedVal === 'to ng so tie n' ||
+              normalizedVal === 'to ng gia tri' ||
+              normalizedVal === 'to ng tha nh toan' ||
+              normalizedVal === 'to ng co ng tha nh toan' ||
+              normalizedVal === 'co ng tha nh tie n' ||
+              normalizedVal === 'tha nh tie n' ||
+              normalizedVal === 'co ng co ng' ||
+              normalizedVal.startsWith('to ng tha nh tie n') ||
+              normalizedVal.startsWith('to ng co ng') ||
+              normalizedVal.startsWith('to ng tie n') ||
+              normalizedVal.startsWith('to ng so tie n') ||
+              normalizedVal.startsWith('to ng gia tri') ||
+              normalizedVal.startsWith('to ng tha nh toan') ||
+              normalizedVal.startsWith('to ng co ng tha nh toan')
+            ) {
+              isTotalRow = true;
+              break;
+            }
+          }
+          if (isTotalRow) {
+            break;
+          }
+          filteredRowsForTable.push(row);
+        }
+
+        const mapped = filteredRowsForTable.map((row, index) => {
       // 1. Raw inputs extracts
       const sttCol = getCellValue(row, 'STT', 'stt', 'No').trim();
-      const maBooking = getCellValue(row, 'Mã booking', 'Ma booking', 'Booking Code', 'Booking', 'Mã booking quảng cáo').trim();
+      const maBooking = getRawCellValue(row, 1);
       const soHt = getCellValue(row, 'Số HT', 'So HT', 'HT', 'Hệ thống').trim();
       const nhan = getCellValue(row, 'Nhãn', 'Nhan', 'Brand', 'Thương hiệu').trim();
       const noiDungQuangCao = getCellValue(row, 'Nội dung quảng cáo', 'Noi dung quang cao', 'Nội dung', 'Diễn giải').trim();
@@ -313,18 +366,15 @@ export default function BangKeView({
       let fastGhiChu = '';
 
       if (sheetFast) {
-        const normTenHopDong = normalizeText(tenHopDong);
-        const normMaHopDong = normalizeText(maHopDong);
-        const match = (normTenHopDong && fastLookupMap.get(normTenHopDong)) || 
-                      (normMaHopDong && fastLookupMap.get(normMaHopDong));
-        if (match) {
-          existsInFast = true;
-          fastStatus = match.fastStatus;
-          fastMaKhach = match.fastMaKhach;
-          fastBoPhanThucHien = match.fastBoPhanThucHien;
-          fastGhiChu = match.fastGhiChu;
+          const match = lookupFastContractByBooking(fastLookupMap, maBooking);
+          if (match) {
+            existsInFast = true;
+            fastStatus = match.fastStatus;
+            fastMaKhach = match.fastMaKhach;
+            fastBoPhanThucHien = match.fastBoPhanThucHien;
+            fastGhiChu = match.fastGhiChu;
+          }
         }
-      }
 
       // 4. Booking parsing dates
       const parsedDateRange = parsePostingDateRange(lichDang);
@@ -666,53 +716,32 @@ export default function BangKeView({
   // Compute live visual dashboard aggregates
   const stats = useMemo(() => {
     if (!processedRows) {
-      return { total: 0, dateErrors: 0, missingFast: 0, missingVv: 0, totalAmmount: 0 };
+      return { total: 0, dateErrors: 0, missingFast: 0, missingVv: 0 };
     }
 
     let dateErrors = 0;
     let missingFast = 0;
     let missingVv = 0;
-    let totalAmmount = 0;
 
     processedRows.forEach(row => {
       if (!row.ngayBatDau || !row.ngayKetThuc || !row.ngayHopDong) {
         dateErrors++;
       }
-      if (!row.existsInFast) {
+      if (row.maBooking && !row.existsInFast) {
         missingFast++;
       }
       if (!row.maVv || row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70) {
         missingVv++;
       }
-      totalAmmount += row.thanhTienSauCk || 0;
     });
 
-    return { total: processedRows.length, dateErrors, missingFast, missingVv, totalAmmount };
+    return { total: processedRows.length, dateErrors, missingFast, missingVv };
   }, [processedRows]);
 
-  // Export spreadsheet engine - "Export 2 files: import_hop_dong_moi.xlsx and import_hop_dong_cu.xlsx"
-  const handleExportFiles = (fileType: 'moi' | 'cu') => {
+  const handleExportFile = () => {
     if (!processedRows || processedRows.length === 0) return;
 
-    // Filter logic:
-    // If Tên hợp đồng không có trong Fast thì là hợp đồng mới
-    // Nếu có trong Fast nhưng Trạng thái = 2 thì cũng đưa vào file mới
-    // Nếu Tên hợp đồng có trong Fast và Trạng thái khác 2 thì đưa vào file cũ
-    const exportSubset = processedRows.filter(row => {
-      const hasContractInFast = row.existsInFast;
-      const status2Val = row.fastStatus === '2' || row.fastStatus === 2 || String(row.fastStatus).trim() === '2';
-
-      if (fileType === 'moi') {
-        return !hasContractInFast || status2Val;
-      } else {
-        return hasContractInFast && !status2Val;
-      }
-    });
-
-    if (exportSubset.length === 0) {
-      alert(`Không tìm thấy dòng tương ứng phù hợp để xuất File hợp đồng ${fileType === 'moi' ? 'Mới' : 'Cũ'}.`);
-      return;
-    }
+    const exportSubset = processedRows;
 
     // Check for critical missing values or validation markings before exporting
     const hasWarnings = exportSubset.some(row => 
@@ -726,14 +755,14 @@ export default function BangKeView({
     const executeExport = () => {
       const outputData = buildFastImportRows(exportSubset, { status: 1, sttMode: 'sequential' });
 
-      const targetFileName = fileType === 'moi' ? 'import_hop_dong_moi.xlsx' : 'import_hop_dong_cu.xlsx';
+      const targetFileName = 'bang_ke_fast_output.xlsx';
       exportToExcel(
         [{ sheetName: 'HĐ Đối Soát Fast Import', data: outputData }],
         targetFileName
       );
 
       writeActionLogToSheet(
-        `Xuất Excel bảng kê hợp đồng ${fileType === 'moi' ? 'mới' : 'cũ'}`,
+        'Xuất Excel bảng kê',
         `Xuất thành công tệp Excel [${targetFileName}] chứa ${exportSubset.length} dòng.`
       );
     };
@@ -772,19 +801,11 @@ export default function BangKeView({
           <>
             <button
               type="button"
-              onClick={() => handleExportFiles('moi')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-750 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>Excel Mới</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleExportFiles('cu')}
+              onClick={handleExportFile}
               className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer"
             >
               <Download className="h-3.5 w-3.5" />
-              <span>Excel Cũ</span>
+              <span>Xuất Excel</span>
             </button>
           </>
         )}
@@ -792,7 +813,7 @@ export default function BangKeView({
     );
 
     return () => onHeaderActionsChange?.(null);
-  }, [fileBangKe, processedRows, isProcessing, onHeaderActionsChange]);
+  }, [fileBangKe, fileFast, processedRows, isProcessing, products, config, onHeaderActionsChange]);
 
   return (
     <div id={id} className="space-y-6">
@@ -923,22 +944,6 @@ export default function BangKeView({
 
       </div>
 
-      {/* Primary Analytics Trigger Ribbon */}
-      {fileBangKe && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center space-x-3 text-slate-600 text-xs">
-            <Info className="h-5 w-5 text-indigo-500 flex-shrink-0" />
-            <div>
-              <p className="font-semibold text-slate-700">Tệp tin đầu vào sẵn sàng phân tích</p>
-              <p className="text-slate-450 mt-0.5">
-                File Bảng kê: <strong className="font-mono text-indigo-600">[{fileBangKe.fileName}]</strong> ({fileBangKe.sheets[0]?.rows.length} dòng)
-                {fileFast && <> | File HĐ Fast: <strong className="font-mono text-rose-600">[{fileFast.fileName}]</strong> ({fileFast.sheets[0]?.rows.length} dòng)</>}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {errorMessage && (
         <div className="bg-rose-50 border border-rose-150 p-4 rounded-xl text-rose-800 text-xs flex items-start space-x-2.5">
           <XCircle className="h-5 w-5 text-rose-500 mt-0.5 flex-shrink-0" />
@@ -956,64 +961,6 @@ export default function BangKeView({
       {/* Main interactive grid area */}
       {processedRows && (
         <div className="space-y-6 animate-fade-in">
-          
-          {/* Diagnostic Metrics Dashboards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            
-            {/* Metric: Total */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col justify-between">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">Tổng số dòng</span>
-              <div>
-                <span className="text-xl font-extrabold text-slate-700 leading-none">{stats.total}</span>
-                <span className="text-[10px] text-slate-400 font-mono ml-1">dòng</span>
-              </div>
-              <span className="text-[9px] text-slate-400 mt-1 block">Bảng kê tải lên</span>
-            </div>
-
-            {/* Metric: Gross amount */}
-            <div className="bg-indigo-50/55 border border-indigo-100 rounded-xl p-4 flex flex-col justify-between">
-              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest font-mono">Tổng doanh số</span>
-              <div>
-                <span className="text-xl font-extrabold text-indigo-700 leading-none font-sans">
-                  {stats.totalAmmount.toLocaleString('vi-VN')}
-                </span>
-                <span className="text-[10px] text-indigo-400 font-mono ml-1">VND</span>
-              </div>
-              <span className="text-[9px] text-indigo-400 mt-1 block">Giá trị trước thuế</span>
-            </div>
-
-            {/* Metric: Date Parse Failures */}
-            <div className={`border rounded-xl p-4 flex flex-col justify-between transition-all duration-200 ${stats.dateErrors > 0 ? 'bg-rose-50/40 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold uppercase tracking-widest font-mono ${stats.dateErrors > 0 ? 'text-rose-500' : 'text-slate-400'}`}>Lỗi Lịch đăng</span>
-              <div>
-                <span className={`text-xl font-extrabold font-sans ${stats.dateErrors > 0 ? 'text-rose-700' : 'text-slate-700'}`}>{stats.dateErrors}</span>
-                <span className="text-[10px] text-slate-400 font-mono ml-1">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-450 mt-1 block">Không parse được ngày</span>
-            </div>
-
-            {/* Metric: Unlinked contract lookups */}
-            <div className={`border rounded-xl p-4 flex flex-col justify-between transition-all duration-200 ${stats.missingFast > 0 ? 'bg-amber-50/40 border-amber-205' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold uppercase tracking-widest font-mono ${stats.missingFast > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Chưa khớp FAST</span>
-              <div>
-                <span className={`text-xl font-extrabold font-sans ${stats.missingFast > 0 ? 'text-amber-700' : 'text-slate-700'}`}>{stats.missingFast}</span>
-                <span className="text-[10px] text-slate-400 font-mono ml-1">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-450 mt-1 block">Tên HĐ không có trong Fast</span>
-            </div>
-
-            {/* Metric: Low confidence keyword matching */}
-            <div className={`border rounded-xl p-4 flex flex-col justify-between transition-all duration-200 ${stats.missingVv > 0 ? 'bg-amber-50/40 border-amber-205' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold uppercase tracking-widest font-mono ${stats.missingVv > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Kiểm tra Mã VV</span>
-              <div>
-                <span className={`text-xl font-extrabold font-sans ${stats.missingVv > 0 ? 'text-amber-700' : 'text-slate-700'}`}>{stats.missingVv}</span>
-                <span className="text-[10px] text-slate-400 font-mono ml-1">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-450 mt-1 block">Confidence match thấp</span>
-            </div>
-
-          </div>
-
           {/* Interactive filter and search controls ribbon */}
           <div className="bg-slate-900 border border-slate-800 text-white rounded-xl p-4.5 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             
@@ -1363,6 +1310,11 @@ export default function BangKeView({
                                 className="w-full bg-transparent focus:outline-none text-[11px] font-mono font-bold text-slate-800 px-1"
                                 placeholder="..."
                               />
+                              {row.maVv && (
+                                <span className={`text-[9px] font-mono font-bold px-1 py-0.5 rounded ml-1 shrink-0 select-none transition ${row.matchStatus === 'OK' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                                  {row.confidenceScore}%
+                                </span>
+                              )}
                             </div>
 
                             {/* Options Dropdown */}
@@ -1535,17 +1487,9 @@ export default function BangKeView({
                             {row.ghiChuChiTiet || <span className="text-slate-300 italic">Trống</span>}
                           </td>
 
-                          {/* Fast Link Status Indicator */}
-                          <td className="py-3 px-3 text-center border-l border-slate-100">
-                            {row.existsInFast ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-100 font-mono">
-                                FAST (STT: {row.fastStatus || 'N/A'})
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-100 font-mono">
-                                HĐ MỚI
-                              </span>
-                            )}
+                          {/* Fast status value */}
+                          <td className="py-3 px-3 text-center border-l border-slate-100 font-mono text-[11px] font-bold text-slate-700">
+                            {row.fastStatus || ''}
                           </td>
 
                         </tr>

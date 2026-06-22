@@ -1,13 +1,76 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import * as XLSX from 'xlsx';
 import { UploadedFileData, ExcelSheetData } from '../types';
 
 /**
+ * Danh sách từ khóa đặc trưng dùng để nhận diện dòng tiêu đề thật của bảng dữ liệu.
+ * Khi một dòng chứa tối thiểu MIN_HEADER_KEYWORD_MATCHES từ khóa, nó được xem là header row.
+ */
+const HEADER_KEYWORDS = [
+  'hợp đồng', 'hop dong',
+  'tên hợp đồng', 'ten hop dong',
+  'mã booking', 'ma booking', 'booking',
+  'số ht', 'so ht',
+  'mã khách', 'ma khach',
+  'khách hàng', 'khach hang',
+  'trạng thái', 'trang thai',
+  'ngày hợp đồng', 'ngay hop dong',
+  'lịch đăng', 'lich dang',
+  'stt',
+  'tên sale', 'ten sale',
+  'bộ phận', 'bo phan',
+  'hình thức', 'hinh thuc',
+  'thành tiền', 'thanh tien',
+  'số lượng', 'so luong',
+  'đơn giá', 'don gia',
+  'ghi chú', 'ghi chu',
+  'chiết khấu', 'chiet khau',
+  'mã sale', 'ma sale',
+];
+
+const MIN_HEADER_KEYWORD_MATCHES = 2;
+
+/**
+ * Chuẩn hóa chuỗi để so sánh không phân biệt hoa thường và dấu tiếng Việt.
+ */
+function normalizeForHeaderDetection(str: string): string {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Quét các dòng thô (2D array) để tìm chỉ số dòng tiêu đề thật.
+ * Trả về index của dòng header nếu tìm thấy, hoặc -1 nếu không tìm thấy
+ * (caller sẽ fallback về dòng 0 — hành vi backward-compatible).
+ */
+function detectHeaderRowIndex(rawArray: any[][]): number {
+  for (let i = 0; i < rawArray.length; i++) {
+    const row = rawArray[i];
+    if (!Array.isArray(row)) continue;
+
+    let matchCount = 0;
+    for (const cell of row) {
+      if (cell === null || cell === undefined) continue;
+      const normalized = normalizeForHeaderDetection(String(cell));
+      for (const keyword of HEADER_KEYWORDS) {
+        if (normalized === keyword || normalized.includes(keyword)) {
+          matchCount++;
+          break; // mỗi cell chỉ tính 1 lần
+        }
+      }
+      if (matchCount >= MIN_HEADER_KEYWORD_MATCHES) return i;
+    }
+  }
+  return -1; // không tìm thấy — fallback về dòng 0
+}
+
+/**
  * Parses an Excel File object into structured JSON data.
+ * Tự động nhận diện dòng tiêu đề thật (dynamic header detection).
+ * Nếu không phát hiện được header, fallback về dòng 0 (backward-compatible).
  */
 export async function parseExcelFile(file: File): Promise<UploadedFileData> {
   return new Promise((resolve, reject) => {
@@ -31,15 +94,37 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
 
         for (const sheetName of workbook.SheetNames) {
           const worksheet = workbook.Sheets[sheetName];
-          // Get rows as arrays first or objects
-          const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, { defval: '' });
-          
+
+          // Bước 1: Đọc thô toàn bộ sheet dạng 2D array (không dùng dòng nào làm header)
+          const rawArray = XLSX.utils.sheet_to_json<any[]>(worksheet, {
+            header: 1,
+            defval: '',
+          });
+
+          // Bước 2: Tự động phát hiện dòng tiêu đề thật
+          const headerRowIndex = detectHeaderRowIndex(rawArray);
+          // Nếu không phát hiện được (headerRowIndex === -1), dùng dòng 0 (backward-compatible)
+          const effectiveHeaderRow = headerRowIndex >= 0 ? headerRowIndex : 0;
+
+          // Bước 3: Parse dữ liệu từ đúng dòng header trở đi
+          // range option: bỏ qua các dòng trước header
+          const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, {
+            defval: '',
+            range: effectiveHeaderRow,
+          });
+
+          const dataRows = rawArray.slice(effectiveHeaderRow + 1);
+          rawRows.forEach((row, rowIndex) => {
+            row.__cells = dataRows[rowIndex] || [];
+          });
+
           let headers: string[] = [];
           if (rawRows.length > 0) {
-            // Find all unique keys across rows to formulate robust headers
             const headerSet = new Set<string>();
             rawRows.forEach((row) => {
-              Object.keys(row).forEach((key) => headerSet.add(key));
+              Object.keys(row).forEach((key) => {
+                if (!key.startsWith('__')) headerSet.add(key);
+              });
             });
             headers = Array.from(headerSet);
           }
@@ -77,6 +162,7 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
     reader.readAsBinaryString(file);
   });
 }
+
 
 /**
  * Exports JSON data structure to a downloadable Excel (.xlsx) file.
