@@ -24,6 +24,7 @@ import ConfirmModal from './ConfirmModal';
 interface HopDongMoiViewProps {
   id?: string;
   config: ContractSettings;
+  onHeaderActionsChange?: (actions: React.ReactNode | null) => void;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -74,6 +75,7 @@ const mergeUploadedFiles = (files: UploadedFileData[], label: string): UploadedF
 export default function HopDongMoiView({
   id = 'hop-dong-moi-view',
   config,
+  onHeaderActionsChange,
 }: HopDongMoiViewProps) {
   // Master data state loaded from storage
   const [customers, setCustomers] = useState<CustomerMaster[]>([]);
@@ -684,6 +686,42 @@ export default function HopDongMoiView({
     }
   };
 
+  useEffect(() => {
+    onHeaderActionsChange?.(
+      <div className="flex items-center gap-2">
+        {fileMoi && (
+          <button
+            onClick={handleProcessContracts}
+            disabled={isProcessing}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-wait text-white text-xs font-bold rounded-full shadow-sm transition-all active:scale-[0.98]"
+          >
+            {isProcessing ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Calculator className="h-3.5 w-3.5" />
+            )}
+            <span>{isProcessing ? 'Đang xử lý' : 'Xử lý'}</span>
+          </button>
+        )}
+
+        {processedRows && (
+          <button
+            onClick={handleExportFinished}
+            disabled={filteredRows.length === 0}
+            title={`Xuất ${filteredRows.length} dòng - 36 cột`}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer disabled:cursor-not-allowed"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Excel</span>
+            <span className="bg-emerald-500/40 text-white text-[10px] font-mono px-1.5 py-0.5 rounded-full">{filteredRows.length}</span>
+          </button>
+        )}
+      </div>
+    );
+
+    return () => onHeaderActionsChange?.(null);
+  }, [fileMoi, processedRows, filteredRows, isProcessing, onHeaderActionsChange]);
+
   return (
     <div id={id} className="space-y-6">
       {/* Page header */}
@@ -825,14 +863,6 @@ export default function HopDongMoiView({
               </p>
             </div>
           </div>
-          <button
-            onClick={handleProcessContracts}
-            disabled={isProcessing}
-            className="w-full sm:w-auto flex items-center justify-center space-x-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-wait text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
-          >
-            {isProcessing ? <RefreshCw className="h-4.5 w-4.5 animate-spin" /> : <Calculator className="h-4.5 w-4.5" />}
-            <span>{isProcessing ? 'ĐANG XỬ LÝ...' : 'HẠCH TOÁN & LOẠI TRÙNG FAST'}</span>
-          </button>
         </div>
       )}
 
@@ -1018,17 +1048,7 @@ export default function HopDongMoiView({
                   </button>
                 )}
               </div>
-
             </div>
-
-            <button
-              onClick={handleExportFinished}
-              disabled={filteredRows.length === 0}
-              className="flex items-center justify-center space-x-2 text-xs font-bold leading-none bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 disabled:text-slate-500 cursor-pointer disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg transition shadow-md"
-            >
-              <Download className="h-4.5 w-4.5" />
-              <span>XUẤT FILE PHỤC VỤ FAST IMPORT ({filteredRows.length} DÒNG - 36 CỘT)</span>
-            </button>
           </div>
 
           {/* Interactive Spreadsheet View */}

@@ -383,7 +383,7 @@ export default function App() {
               <span>Cơ sở hạch toán: 2026</span>
             </span>
 
-            {activeTab === AppTab.LUAN_CHUYEN && headerActions}
+            {(activeTab === AppTab.LUAN_CHUYEN || activeTab === AppTab.HOP_DONG_MOI || activeTab === AppTab.BANG_KE) && headerActions}
 
             {isSyncing && (
               <span className="flex items-center space-x-1.5 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-100 animate-pulse">
@@ -436,12 +436,14 @@ export default function App() {
             {activeTab === AppTab.HOP_DONG_MOI && (
               <HopDongMoiView
                 config={config}
+                onHeaderActionsChange={setHeaderActions}
               />
             )}
 
             {activeTab === AppTab.BANG_KE && (
               <BangKeView
                 config={config}
+                onHeaderActionsChange={setHeaderActions}
               />
             )}
           </div>

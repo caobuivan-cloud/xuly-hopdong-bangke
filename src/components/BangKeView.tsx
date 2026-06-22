@@ -26,6 +26,7 @@ import ConfirmModal from './ConfirmModal';
 interface BangKeViewProps {
   id?: string;
   config: ContractSettings;
+  onHeaderActionsChange?: (actions: React.ReactNode | null) => void;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -72,6 +73,7 @@ const mergeUploadedFiles = (files: UploadedFileData[], label: string): UploadedF
 export default function BangKeView({
   id = 'bang-ke-view',
   config,
+  onHeaderActionsChange,
 }: BangKeViewProps) {
   // Master data lists
   const [customers, setCustomers] = useState<CustomerMaster[]>([]);
@@ -742,6 +744,50 @@ export default function BangKeView({
     }
   };
 
+  useEffect(() => {
+    onHeaderActionsChange?.(
+      <div className="flex items-center gap-2">
+        {fileBangKe && (
+          <button
+            onClick={handleProcessBangKe}
+            disabled={isProcessing}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-wait text-white text-xs font-bold rounded-full shadow-sm transition-all active:scale-[0.98]"
+          >
+            {isProcessing ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Calculator className="h-3.5 w-3.5" />
+            )}
+            <span>{isProcessing ? 'Đang xử lý' : 'Xử lý'}</span>
+          </button>
+        )}
+
+        {processedRows && (
+          <>
+            <button
+              type="button"
+              onClick={() => handleExportFiles('moi')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-750 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Excel Mới</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportFiles('cu')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Excel Cũ</span>
+            </button>
+          </>
+        )}
+      </div>
+    );
+
+    return () => onHeaderActionsChange?.(null);
+  }, [fileBangKe, processedRows, isProcessing, onHeaderActionsChange]);
+
   return (
     <div id={id} className="space-y-6">
       
@@ -884,14 +930,6 @@ export default function BangKeView({
               </p>
             </div>
           </div>
-          <button
-            onClick={handleProcessBangKe}
-            disabled={isProcessing}
-            className="w-full sm:w-auto flex items-center justify-center space-x-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-wait text-white text-sm font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
-          >
-            {isProcessing ? <RefreshCw className="h-4.5 w-4.5 animate-spin" /> : <Calculator className="h-4.5 w-4.5" />}
-            <span>{isProcessing ? 'ĐANG XỬ LÝ...' : 'HẠCH TOÁN BẢNG KÊ'}</span>
-          </button>
         </div>
       )}
 
@@ -1075,29 +1113,7 @@ export default function BangKeView({
                   </button>
                 )}
               </div>
-
             </div>
-
-            {/* Exports actions sector */}
-            <div className="flex items-center gap-2.5 self-stretch sm:self-auto">
-              <button
-                type="button"
-                onClick={() => handleExportFiles('moi')}
-                className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all active:scale-[0.98]"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Xuất HĐ Mới</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExportFiles('cu')}
-                className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-4 py-2 text-xs font-bold bg-emerald-650 hover:bg-emerald-750 text-white rounded-lg transition-all active:scale-[0.98]"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Xuất HĐ Cũ</span>
-              </button>
-            </div>
-
           </div>
 
           {/* Core Interactive Spreadsheet Frame */}
