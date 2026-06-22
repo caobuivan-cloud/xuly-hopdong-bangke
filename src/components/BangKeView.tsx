@@ -513,13 +513,10 @@ export default function BangKeView({
     const updated = processedRows.map(row => {
       if (row.id !== rowId) return row;
       const newRow = { ...row, [field]: value };
-      const changedManually = String(row[field] ?? '') !== String(value ?? '');
-      if (changedManually) {
-        newRow.manualChanges = {
-          ...(row.manualChanges || {}),
-          [field]: true,
-        };
-      }
+      newRow.manualChanges = {
+        ...(row.manualChanges || {}),
+        [field]: true,
+      };
 
       if (field === 'maVv') {
         const foundProd = products.find(p => p.maVuViec === value);
@@ -1140,7 +1137,7 @@ export default function BangKeView({
                                 </TooltipIcon>
                               )}
                               {manualFields.length > 0 && (
-                                <TooltipIcon tooltip={`Đã sửa thủ công: ${manualFields.join(', ')}`}>
+                                <TooltipIcon tooltip="Người dùng sửa tay">
                                   <Info className="h-3.5 w-3.5 text-sky-500" />
                                 </TooltipIcon>
                               )}

@@ -453,13 +453,10 @@ export default function HopDongMoiView({
       if (row.id !== rowId) return row;
 
       const newRow = { ...row, [field]: value };
-      const changedManually = String(row[field] ?? '') !== String(value ?? '');
-      if (changedManually) {
-        newRow.manualChanges = {
-          ...(row.manualChanges || {}),
-          [field]: true,
-        };
-      }
+      newRow.manualChanges = {
+        ...(row.manualChanges || {}),
+        [field]: true,
+      };
 
       // Re-trigger product lookup implications if Mã Vụ việc changes
       if (field === 'maVv') {
@@ -1130,7 +1127,7 @@ export default function HopDongMoiView({
                                 </TooltipIcon>
                               )}
                               {manualFields.length > 0 && (
-                                <TooltipIcon tooltip={`Đã sửa thủ công: ${manualFields.join(', ')}`}>
+                                <TooltipIcon tooltip="Người dùng sửa tay">
                                   <Info className="h-3.5 w-3.5 text-sky-500" />
                                 </TooltipIcon>
                               )}

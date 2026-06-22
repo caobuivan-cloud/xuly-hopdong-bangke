@@ -417,13 +417,10 @@ export default function LuanChuyenView({
       if (row.id !== rowId) return row;
 
       const newRow = { ...row, [field]: val };
-      const changedManually = String(row[field] ?? '') !== String(val ?? '');
-      if (changedManually) {
-        newRow.manualChanges = {
-          ...(row.manualChanges || {}),
-          [field]: true,
-        };
-      }
+      newRow.manualChanges = {
+        ...(row.manualChanges || {}),
+        [field]: true,
+      };
 
       // Extra helpers: if product selection changes, let's update related info
       if (field === 'maVv') {
@@ -1035,7 +1032,7 @@ export default function LuanChuyenView({
                                 </TooltipIcon>
                               )}
                               {manualFields.length > 0 && (
-                                <TooltipIcon tooltip={`Đã sửa thủ công: ${manualFields.join(', ')}`}>
+                                <TooltipIcon tooltip="Người dùng sửa tay">
                                   <Info className="h-3.5 w-3.5 text-sky-500" />
                                 </TooltipIcon>
                               )}
