@@ -51,8 +51,11 @@ export function lookupExact<T>(
 
   for (const row of masterRows) {
     const targetVal = row[sourceField];
-    if (targetVal && normalizeText(targetVal) === normalizedSourceValue) {
-      return row[returnField];
+    if (targetVal) {
+      const normTarget = (row as any).__normExactVals?.[sourceField] || normalizeText(targetVal);
+      if (normTarget === normalizedSourceValue) {
+        return row[returnField];
+      }
     }
   }
   return null;
@@ -122,7 +125,7 @@ export function keywordMatch(
   const candidates: CandidateMatch[] = [];
 
   for (const prod of productMaster) {
-    const normKW = normalizeText(prod.keyword);
+    const normKW = (prod as any).__normKeyword || normalizeText(prod.keyword);
     if (!normKW) continue;
 
     let score = 0;

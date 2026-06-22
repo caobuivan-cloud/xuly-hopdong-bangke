@@ -276,6 +276,12 @@ export default function BangKeView({
           });
         }
 
+        // Pre-normalize products master list to avoid millions of heavy normalizeText calls inside loop
+        const preNormalizedProducts = products.map(p => ({
+          ...p,
+          __normKeyword: normalizeText(p.keyword)
+        }));
+
         const mapped = sheetBangKe.rows.map((row, index) => {
       // 1. Raw inputs extracts
       const sttCol = getCellValue(row, 'STT', 'stt', 'No').trim();
@@ -339,7 +345,7 @@ export default function BangKeView({
       const ngayHopDong = parsedContractDate.text || '';
 
       // 5. Product lookup via fuzzy matcher
-      const matchResult = keywordMatch(noiDungQuangCao, products);
+      const matchResult = keywordMatch(noiDungQuangCao, preNormalizedProducts);
       const maVv = matchResult.maVV || '';
       const confidenceScore = matchResult.bestMatch ? matchResult.confidenceScore : 0;
       const matchStatus = matchResult.bestMatch ? matchResult.status : 'KHONG_MATCH';

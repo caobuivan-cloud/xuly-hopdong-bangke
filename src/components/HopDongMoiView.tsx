@@ -259,6 +259,20 @@ export default function HopDongMoiView({
           });
         }
 
+        // Pre-normalize master data to avoid millions of heavy normalizeText calls in the mapping loop
+        const preNormalizedCustomers = customers.map(c => ({
+          ...c,
+          __normExactVals: { tenKhach: normalizeText(c.tenKhach) }
+        }));
+        const preNormalizedDepartments = departments.map(d => ({
+          ...d,
+          __normExactVals: { tenBoPhan: normalizeText(d.tenBoPhan) }
+        }));
+        const preNormalizedProducts = products.map(p => ({
+          ...p,
+          __normKeyword: normalizeText(p.keyword)
+        }));
+
         const mapped = sheetMoi.rows.map((row, index) => {
       // 1. extract literal values
       const soHd = getCellValue(row, 'Số HĐ', 'So HD', 'Mã yêu cầu', 'Hợp đồng', 'Số HĐ nhận việc').trim();
@@ -281,12 +295,12 @@ export default function HopDongMoiView({
       const tenHopDong = soHd ? `${soHd}${separator}${suffix}` : '';
 
       // 3. logic: Mã khách & Bộ phận thực hiện
-      const maKhach = lookupExact(tenKhachHang, customers, 'tenKhach', 'maKhach') || '';
-      const boPhanThucHien = lookupExact(tenSale, departments, 'tenBoPhan', 'maSale') || '';
+      const maKhach = lookupExact(tenKhachHang, preNormalizedCustomers, 'tenKhach', 'maKhach') || '';
+      const boPhanThucHien = lookupExact(tenSale, preNormalizedDepartments, 'tenBoPhan', 'maSale') || '';
 
       // 4. logic: Mã vụ việc (keyword match)
       const combinedProductText = [sanPham, loaiBanner, tenBanner].filter(Boolean).join(' ');
-      const matchResult = keywordMatch(combinedProductText, products);
+      const matchResult = keywordMatch(combinedProductText, preNormalizedProducts);
 
       const maVv = matchResult.maVV || '';
       const confidenceScore = matchResult.bestMatch ? matchResult.confidenceScore : 0;
