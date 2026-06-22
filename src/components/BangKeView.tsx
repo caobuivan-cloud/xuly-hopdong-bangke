@@ -21,6 +21,7 @@ import {
   parsePostingDateRange, parseContractDateFromBooking
 } from '../utils/businessLogic';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
+import ConfirmModal from './ConfirmModal';
 
 interface BangKeViewProps {
   id?: string;
@@ -86,6 +87,7 @@ export default function BangKeView({
   const [processedRows, setProcessedRows] = useState<Record<string, any>[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<{ title: string; message: string; type?: 'info' | 'warning' | 'danger'; onConfirm: () => void } | null>(null);
 
   // Search query & filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -97,34 +99,33 @@ export default function BangKeView({
   const fileBangKe = useMemo(() => mergeUploadedFiles(fileBangKeList, 'Bảng kê chi tiết'), [fileBangKeList]);
   const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
 
-  const confirmResetProcessedData = () => {
-    if (!processedRows) return true;
-    const ok = window.confirm(
-      'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?'
-    );
-    if (ok) {
-      setProcessedRows(null);
-      setCurrentPage(1);
-      setActiveAutocomplete(null);
-    }
-    return ok;
-  };
-
   const replaceUploadedFiles = (
     files: UploadedFileData[],
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
-    if (!confirmResetProcessedData()) return;
-    setter(files);
-    setProcessedRows(null);
-    if (files.length > 0) {
-      const fileNames = files.map(f => f.fileName).join(', ');
-      const isFast = setter === setFileFastList;
-      const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
-      writeActionLogToSheet(
-        `Tải file ${typeStr}`,
-        `Tải lên tệp: ${fileNames}`
-      );
+    const action = () => {
+      setter(files);
+      setProcessedRows(null);
+      if (files.length > 0) {
+        const fileNames = files.map(f => f.fileName).join(', ');
+        const isFast = setter === setFileFastList;
+        const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
+        writeActionLogToSheet(
+          `Tải file ${typeStr}`,
+          `Tải lên tệp: ${fileNames}`
+        );
+      }
+    };
+
+    if (processedRows) {
+      setConfirmConfig({
+        title: 'Xác nhận thay đổi file',
+        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?',
+        type: 'warning',
+        onConfirm: action
+      });
+    } else {
+      action();
     }
   };
 
@@ -132,20 +133,32 @@ export default function BangKeView({
     index: number,
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
-    if (!confirmResetProcessedData()) return;
-    setter((files) => {
-      const removedFile = files[index];
-      if (removedFile) {
-        const isFast = setter === setFileFastList;
-        const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
-        writeActionLogToSheet(
-          `Xóa file ${typeStr}`,
-          `Xóa tệp: ${removedFile.fileName}`
-        );
-      }
-      return files.filter((_, fileIndex) => fileIndex !== index);
-    });
-    setProcessedRows(null);
+    const action = () => {
+      setter((files) => {
+        const removedFile = files[index];
+        if (removedFile) {
+          const isFast = setter === setFileFastList;
+          const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
+          writeActionLogToSheet(
+            `Xóa file ${typeStr}`,
+            `Xóa tệp: ${removedFile.fileName}`
+          );
+        }
+        return files.filter((_, fileIndex) => fileIndex !== index);
+      });
+      setProcessedRows(null);
+    };
+
+    if (processedRows) {
+      setConfirmConfig({
+        title: 'Xác nhận xóa file',
+        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?',
+        type: 'warning',
+        onConfirm: action
+      });
+    } else {
+      action();
+    }
   };
 
   // Active inputs autocomplete manager state
@@ -693,27 +706,31 @@ export default function BangKeView({
       row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70
     );
 
-    if (hasWarnings) {
-      const confirmExport = window.confirm(
-        '⚠️ CẢNH BÁO PHÁT HIỆN LỖI HẠCH TOÁN:\n\n' +
-        'Sổ xuất Excel chuẩn bị tải xuống có dòng gặp Lịch đăng sai định dạng, thiếu Mã vụ việc thâm căn, thiếu Mã khách hoặc nghi vấn độ chính xác (Confidence Score thấp).\n\n' +
-        'Bạn có chắc chắn muốn xuất tệp Excel không?'
+    const executeExport = () => {
+      const outputData = buildFastImportRows(exportSubset, { status: 1, sttMode: 'sequential' });
+
+      const targetFileName = fileType === 'moi' ? 'import_hop_dong_moi.xlsx' : 'import_hop_dong_cu.xlsx';
+      exportToExcel(
+        [{ sheetName: 'HĐ Đối Soát Fast Import', data: outputData }],
+        targetFileName
       );
-      if (!confirmExport) return;
+
+      writeActionLogToSheet(
+        `Xuất Excel bảng kê hợp đồng ${fileType === 'moi' ? 'mới' : 'cũ'}`,
+        `Xuất thành công tệp Excel [${targetFileName}] chứa ${exportSubset.length} dòng.`
+      );
+    };
+
+    if (hasWarnings) {
+      setConfirmConfig({
+        title: '⚠️ CẢNH BÁO PHÁT HIỆN LỖI HẠCH TOÁN',
+        message: 'Sổ xuất Excel chuẩn bị tải xuống có dòng gặp Lịch đăng sai định dạng, thiếu Mã vụ việc thâm căn, thiếu Mã khách hoặc nghi vấn độ chính xác (Confidence Score thấp).\n\nBạn có chắc chắn muốn xuất tệp Excel không?',
+        type: 'danger',
+        onConfirm: executeExport
+      });
+    } else {
+      executeExport();
     }
-
-    const outputData = buildFastImportRows(exportSubset, { status: 1, sttMode: 'sequential' });
-
-    const targetFileName = fileType === 'moi' ? 'import_hop_dong_moi.xlsx' : 'import_hop_dong_cu.xlsx';
-    exportToExcel(
-      [{ sheetName: 'HĐ Đối Soát Fast Import', data: outputData }],
-      targetFileName
-    );
-
-    writeActionLogToSheet(
-      `Xuất Excel bảng kê hợp đồng ${fileType === 'moi' ? 'mới' : 'cũ'}`,
-      `Xuất thành công tệp Excel [${targetFileName}] chứa ${exportSubset.length} dòng.`
-    );
   };
 
   return (
@@ -1549,10 +1566,20 @@ export default function BangKeView({
             )}
 
           </div>
-
         </div>
       )}
 
+      <ConfirmModal
+        isOpen={confirmConfig !== null}
+        title={confirmConfig?.title || ''}
+        message={confirmConfig?.message || ''}
+        type={confirmConfig?.type || 'info'}
+        onConfirm={() => {
+          confirmConfig?.onConfirm();
+          setConfirmConfig(null);
+        }}
+        onCancel={() => setConfirmConfig(null)}
+      />
     </div>
   );
 }

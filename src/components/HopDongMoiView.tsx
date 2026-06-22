@@ -19,6 +19,7 @@ import {
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
 } from '../utils/businessLogic';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
+import ConfirmModal from './ConfirmModal';
 
 interface HopDongMoiViewProps {
   id?: string;
@@ -88,6 +89,7 @@ export default function HopDongMoiView({
   const [processedRows, setProcessedRows] = useState<Record<string, any>[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<{ title: string; message: string; type?: 'info' | 'warning' | 'danger'; onConfirm: () => void } | null>(null);
 
   // Filtering & Pagination
   const [searchTerm, setSearchTerm] = useState('');
@@ -99,34 +101,33 @@ export default function HopDongMoiView({
   const fileMoi = useMemo(() => mergeUploadedFiles(fileMoiList, 'Hợp đồng mới'), [fileMoiList]);
   const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
 
-  const confirmResetProcessedData = () => {
-    if (!processedRows) return true;
-    const ok = window.confirm(
-      'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?'
-    );
-    if (ok) {
-      setProcessedRows(null);
-      setCurrentPage(1);
-      setActiveAutocomplete(null);
-    }
-    return ok;
-  };
-
   const replaceUploadedFiles = (
     files: UploadedFileData[],
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
-    if (!confirmResetProcessedData()) return;
-    setter(files);
-    setProcessedRows(null);
-    if (files.length > 0) {
-      const fileNames = files.map(f => f.fileName).join(', ');
-      const isFast = setter === setFileFastList;
-      const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng mới";
-      writeActionLogToSheet(
-        `Tải file ${typeStr}`,
-        `Tải lên tệp: ${fileNames}`
-      );
+    const action = () => {
+      setter(files);
+      setProcessedRows(null);
+      if (files.length > 0) {
+        const fileNames = files.map(f => f.fileName).join(', ');
+        const isFast = setter === setFileFastList;
+        const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng mới";
+        writeActionLogToSheet(
+          `Tải file ${typeStr}`,
+          `Tải lên tệp: ${fileNames}`
+        );
+      }
+    };
+
+    if (processedRows) {
+      setConfirmConfig({
+        title: 'Xác nhận thay đổi file',
+        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?',
+        type: 'warning',
+        onConfirm: action
+      });
+    } else {
+      action();
     }
   };
 
@@ -134,20 +135,32 @@ export default function HopDongMoiView({
     index: number,
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
-    if (!confirmResetProcessedData()) return;
-    setter((files) => {
-      const removedFile = files[index];
-      if (removedFile) {
-        const isFast = setter === setFileFastList;
-        const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng mới";
-        writeActionLogToSheet(
-          `Xóa file ${typeStr}`,
-          `Xóa tệp: ${removedFile.fileName}`
-        );
-      }
-      return files.filter((_, fileIndex) => fileIndex !== index);
-    });
-    setProcessedRows(null);
+    const action = () => {
+      setter((files) => {
+        const removedFile = files[index];
+        if (removedFile) {
+          const isFast = setter === setFileFastList;
+          const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng mới";
+          writeActionLogToSheet(
+            `Xóa file ${typeStr}`,
+            `Xóa tệp: ${removedFile.fileName}`
+          );
+        }
+        return files.filter((_, fileIndex) => fileIndex !== index);
+      });
+      setProcessedRows(null);
+    };
+
+    if (processedRows) {
+      setConfirmConfig({
+        title: 'Xác nhận xóa file',
+        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?',
+        type: 'warning',
+        onConfirm: action
+      });
+    } else {
+      action();
+    }
   };
 
   // Active inputs autocomplete manager
@@ -638,26 +651,30 @@ export default function HopDongMoiView({
       row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70
     );
 
-    if (hasWarnings) {
-      const confirmExport = window.confirm(
-        '⚠️ CẢNH BÁO PHÁT HIỆN LỖI HẠCH TOÁN:\n\n' +
-        'Sổ xuất Excel chuẩn bị tải xuống có dòng gặp Ngày tháng thiếu, thiếu Mã vụ việc thâm căn, thiếu Mã khách hoặc nghi vấn độ chính xác (Confidence Score thấp).\n\n' +
-        'Bạn có chắc chắn muốn xuất tệp Excel không?'
+    const executeExport = () => {
+      const dataExcel = buildFastImportRows(filteredRows, { status: 2, sttMode: 'blank' });
+
+      exportToExcel(
+        [{ sheetName: 'HĐ Mới Fast Import', data: dataExcel }],
+        `Enriched_HopDongMoi_36Cols_${new Date().toISOString().split('T')[0]}.xlsx`
       );
-      if (!confirmExport) return;
+
+      writeActionLogToSheet(
+        'Xuất Excel hợp đồng mới',
+        `Xuất thành công tệp Excel chứa ${filteredRows.length} dòng.`
+      );
+    };
+
+    if (hasWarnings) {
+      setConfirmConfig({
+        title: '⚠️ CẢNH BÁO PHÁT HIỆN LỖI HẠCH TOÁN',
+        message: 'Sổ xuất Excel chuẩn bị tải xuống có dòng gặp Ngày tháng thiếu, thiếu Mã vụ việc thâm căn, thiếu Mã khách hoặc nghi vấn độ chính xác (Confidence Score thấp).\n\nBạn có chắc chắn muốn xuất tệp Excel không?',
+        type: 'danger',
+        onConfirm: executeExport
+      });
+    } else {
+      executeExport();
     }
-
-    const dataExcel = buildFastImportRows(filteredRows, { status: 2, sttMode: 'blank' });
-
-    exportToExcel(
-      [{ sheetName: 'HĐ Mới Fast Import', data: dataExcel }],
-      `Enriched_HopDongMoi_36Cols_${new Date().toISOString().split('T')[0]}.xlsx`
-    );
-
-    writeActionLogToSheet(
-      'Xuất Excel hợp đồng mới',
-      `Xuất thành công tệp Excel chứa ${filteredRows.length} dòng.`
-    );
   };
 
   return (
@@ -1438,6 +1455,18 @@ export default function HopDongMoiView({
 
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmConfig !== null}
+        title={confirmConfig?.title || ''}
+        message={confirmConfig?.message || ''}
+        type={confirmConfig?.type || 'info'}
+        onConfirm={() => {
+          confirmConfig?.onConfirm();
+          setConfirmConfig(null);
+        }}
+        onCancel={() => setConfirmConfig(null)}
+      />
     </div>
   );
 }

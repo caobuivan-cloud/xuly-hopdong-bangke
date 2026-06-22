@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { downloadTemplate, parseExcelFile } from '../utils/excel';
 import { dbService, hasValidGoogleSheetsUrl } from '../services/dbService';
+import ConfirmModal from './ConfirmModal';
 
 interface SettingsViewProps {
   id?: string;
@@ -64,6 +65,7 @@ export default function SettingsView({
   const [googleSheetsUrl, setGoogleSheetsUrlState] = useState(config.googleSheetsUrl || '');
   
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<{ title: string; message: string; type?: 'info' | 'warning' | 'danger'; onConfirm: () => void } | null>(null);
 
   // Exceptions rules states
   const [exceptionRules, setExceptionRules] = useState<ExceptionRule[]>(config.exceptionRules || []);
@@ -119,24 +121,33 @@ export default function SettingsView({
 
   const handlePushGoogleSheets = async () => {
     if (!onManualPush) return;
-    if (!window.confirm("Bạn có chắc chắn muốn ghi đè toàn bộ dữ liệu cấu hình và master data hiện tại từ Local lên Google Sheets không?")) return;
-    setSyncLocalError(null);
-    try {
-      await onManualPush({
-        taxRate,
-        agencyFeeRate: agencyFee,
-        requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        contractSuffix,
-        contractNameSeparator,
-        exceptionRules,
-      });
-      setShowSyncSuccess(true);
-      setTimeout(() => setShowSyncSuccess(false), 3000);
-    } catch (err: any) {
-      setSyncLocalError(err?.message || "Lỗi đồng bộ gửi");
-    }
+    
+    const action = async () => {
+      setSyncLocalError(null);
+      try {
+        await onManualPush({
+          taxRate,
+          agencyFeeRate: agencyFee,
+          requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+          requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+          requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+          contractSuffix,
+          contractNameSeparator,
+          exceptionRules,
+        });
+        setShowSyncSuccess(true);
+        setTimeout(() => setShowSyncSuccess(false), 3000);
+      } catch (err: any) {
+        setSyncLocalError(err?.message || "Lỗi đồng bộ gửi");
+      }
+    };
+
+    setConfirmConfig({
+      title: 'Xác nhận đồng bộ gửi (Push)',
+      message: 'Bạn có chắc chắn muốn ghi đè toàn bộ dữ liệu cấu hình và master data hiện tại từ Local lên Google Sheets không?',
+      type: 'warning',
+      onConfirm: action
+    });
   };
 
   // Load master data on mount
@@ -446,44 +457,51 @@ export default function SettingsView({
 
   // Clear master dataset
   const handleClearMaster = async (target: 'bophan' | 'khach' | 'sanpham') => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa toàn bộ dữ liệu master này không?`)) return;
+    const action = async () => {
+      if (target === 'bophan') {
+        await dbService.clearDepartments();
+        setDepartments([]);
+      } else if (target === 'khach') {
+        await dbService.clearCustomers();
+        setCustomers([]);
+      } else if (target === 'sanpham') {
+        await dbService.clearProducts();
+        setProducts([]);
+      }
 
-    if (target === 'bophan') {
-      await dbService.clearDepartments();
-      setDepartments([]);
-    } else if (target === 'khach') {
-      await dbService.clearCustomers();
-      setCustomers([]);
-    } else if (target === 'sanpham') {
-      await dbService.clearProducts();
-      setProducts([]);
-    }
-
-    setUploadFeedback({
-      type: 'success',
-      message: 'Đã xóa dữ liệu thành phẩm khỏi bộ nhớ đệm.',
-      target,
-    });
-
-    if (onManualPush) {
-      onManualPush({
-        taxRate,
-        agencyFeeRate: agencyFee,
-        requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
-        contractSuffix,
-        contractNameSeparator,
-        exceptionRules,
-        logsEnabled,
-        userName,
-        googleSheetsUrl,
-      }).then(() => {
-        setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã cập nhật lên Google Sheets." }));
-      }).catch(err => {
-        setUploadFeedback(prev => ({ ...prev, message: prev.message + " Lỗi cập nhật lên Sheets: " + err.message, type: 'error' }));
+      setUploadFeedback({
+        type: 'success',
+        message: 'Đã xóa dữ liệu thành phẩm khỏi bộ nhớ đệm.',
+        target,
       });
-    }
+
+      if (onManualPush) {
+        onManualPush({
+          taxRate,
+          agencyFeeRate: agencyFee,
+          requiredHeadersLuanChuyen: luanChuyenHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+          requiredHeadersHopDongMoi: hopDongMoiHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+          requiredHeadersBangKe: bangKeHeaders.split(',').map((h) => h.trim()).filter(Boolean),
+          contractSuffix,
+          contractNameSeparator,
+          exceptionRules,
+          logsEnabled,
+          userName,
+          googleSheetsUrl,
+        }).then(() => {
+          setUploadFeedback(prev => ({ ...prev, message: prev.message + " Đã cập nhật lên Google Sheets." }));
+        }).catch(err => {
+          setUploadFeedback(prev => ({ ...prev, message: prev.message + " Lỗi cập nhật lên Sheets: " + err.message, type: 'error' }));
+        });
+      }
+    };
+
+    setConfirmConfig({
+      title: 'Xác nhận xóa dữ liệu master',
+      message: 'Bạn có chắc chắn muốn xóa toàn bộ dữ liệu master này không?',
+      type: 'danger',
+      onConfirm: action
+    });
   };
 
   return (
@@ -1247,7 +1265,18 @@ export default function SettingsView({
           )}
         </div>
       </div>
-      
+
+      <ConfirmModal
+        isOpen={confirmConfig !== null}
+        title={confirmConfig?.title || ''}
+        message={confirmConfig?.message || ''}
+        type={confirmConfig?.type || 'info'}
+        onConfirm={() => {
+          confirmConfig?.onConfirm();
+          setConfirmConfig(null);
+        }}
+        onCancel={() => setConfirmConfig(null)}
+      />
     </div>
   );
 }

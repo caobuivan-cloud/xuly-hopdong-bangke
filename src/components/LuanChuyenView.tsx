@@ -19,6 +19,7 @@ import {
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
 } from '../utils/businessLogic';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
+import ConfirmModal from './ConfirmModal';
 
 interface LuanChuyenViewProps {
   id?: string;
@@ -108,6 +109,7 @@ export default function LuanChuyenView({
   const [processedRows, setProcessedRows] = useState<Record<string, any>[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<{ title: string; message: string; type?: 'info' | 'warning' | 'danger'; onConfirm: () => void } | null>(null);
 
   // Filtering & Pagination states
   const [searchTerm, setSearchTerm] = useState('');
@@ -120,37 +122,33 @@ export default function LuanChuyenView({
   const fileCung = useMemo(() => mergeUploadedFiles(fileCungList, 'Hợp đồng luân chuyển'), [fileCungList]);
   const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
 
-  const confirmResetProcessedData = () => {
-    if (!processedRows) return true;
-
-    const ok = window.confirm(
-      'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?'
-    );
-
-    if (ok) {
-      setProcessedRows(null);
-      setCurrentPage(1);
-      setActiveAutocomplete(null);
-    }
-
-    return ok;
-  };
-
   const replaceUploadedFiles = (
     files: UploadedFileData[],
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
-    if (!confirmResetProcessedData()) return;
-    setter(files);
-    setProcessedRows(null);
-    if (files.length > 0) {
-      const fileNames = files.map(f => f.fileName).join(', ');
-      const isFast = setter === setFileFastList;
-      const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng luân chuyển";
-      writeActionLogToSheet(
-        `Tải file ${typeStr}`,
-        `Tải lên tệp: ${fileNames}`
-      );
+    const action = () => {
+      setter(files);
+      setProcessedRows(null);
+      if (files.length > 0) {
+        const fileNames = files.map(f => f.fileName).join(', ');
+        const isFast = setter === setFileFastList;
+        const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng luân chuyển";
+        writeActionLogToSheet(
+          `Tải file ${typeStr}`,
+          `Tải lên tệp: ${fileNames}`
+        );
+      }
+    };
+
+    if (processedRows) {
+      setConfirmConfig({
+        title: 'Xác nhận thay đổi file',
+        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?',
+        type: 'warning',
+        onConfirm: action
+      });
+    } else {
+      action();
     }
   };
 
@@ -158,20 +156,32 @@ export default function LuanChuyenView({
     index: number,
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
-    if (!confirmResetProcessedData()) return;
-    setter((files) => {
-      const removedFile = files[index];
-      if (removedFile) {
-        const isFast = setter === setFileFastList;
-        const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng luân chuyển";
-        writeActionLogToSheet(
-          `Xóa file ${typeStr}`,
-          `Xóa tệp: ${removedFile.fileName}`
-        );
-      }
-      return files.filter((_, fileIndex) => fileIndex !== index);
-    });
-    setProcessedRows(null);
+    const action = () => {
+      setter((files) => {
+        const removedFile = files[index];
+        if (removedFile) {
+          const isFast = setter === setFileFastList;
+          const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng luân chuyển";
+          writeActionLogToSheet(
+            `Xóa file ${typeStr}`,
+            `Xóa tệp: ${removedFile.fileName}`
+          );
+        }
+        return files.filter((_, fileIndex) => fileIndex !== index);
+      });
+      setProcessedRows(null);
+    };
+
+    if (processedRows) {
+      setConfirmConfig({
+        title: 'Xác nhận xóa file',
+        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?',
+        type: 'warning',
+        onConfirm: action
+      });
+    } else {
+      action();
+    }
   };
 
   // Autocomplete editing states
@@ -567,26 +577,30 @@ export default function LuanChuyenView({
       row.confidenceScore < 70
     );
 
-    if (hasWarnings) {
-      const confirmExport = window.confirm(
-        '⚠️ CẢNH BÁO PHÁT HIỆN LỖI HẠCH TOÁN:\n\n' +
-        'Sổ xuất Excel chuẩn bị tải xuống có dòng gặp Ngày tháng thiếu, thiếu Mã vụ việc thâm căn, thiếu Mã khách hoặc nghi vấn độ chính xác (Confidence Score thấp).\n\n' +
-        'Bạn có chắc chắn muốn xuất tệp Excel không?'
+    const executeExport = () => {
+      const exportFormatted = buildFastImportRows(filteredRows, { status: 1, sttMode: 'blank' });
+
+      exportToExcel(
+        [{ sheetName: 'HĐ Luân Chuyển Fast Import', data: exportFormatted }],
+        `Enriched_LuanChuyen_36Cols_${new Date().toISOString().split('T')[0]}.xlsx`
       );
-      if (!confirmExport) return;
+
+      writeActionLogToSheet(
+        'Xuất Excel hợp đồng luân chuyển',
+        `Xuất thành công tệp Excel chứa ${filteredRows.length} dòng.`
+      );
+    };
+
+    if (hasWarnings) {
+      setConfirmConfig({
+        title: '⚠️ CẢNH BÁO PHÁT HIỆN LỖI HẠCH TOÁN',
+        message: 'Sổ xuất Excel chuẩn bị tải xuống có dòng gặp Ngày tháng thiếu, thiếu Mã vụ việc thâm căn, thiếu Mã khách hoặc nghi vấn độ chính xác (Confidence Score thấp).\n\nBạn có chắc chắn muốn xuất tệp Excel không?',
+        type: 'danger',
+        onConfirm: executeExport
+      });
+    } else {
+      executeExport();
     }
-
-    const exportFormatted = buildFastImportRows(filteredRows, { status: 1, sttMode: 'blank' });
-
-    exportToExcel(
-      [{ sheetName: 'HĐ Luân Chuyển Fast Import', data: exportFormatted }],
-      `Enriched_LuanChuyen_36Cols_${new Date().toISOString().split('T')[0]}.xlsx`
-    );
-
-    writeActionLogToSheet(
-      'Xuất Excel hợp đồng luân chuyển',
-      `Xuất thành công tệp Excel chứa ${filteredRows.length} dòng.`
-    );
   };
 
   useEffect(() => {
@@ -1328,6 +1342,18 @@ export default function LuanChuyenView({
           onClick={() => setActiveAutocomplete(null)}
         />
       )}
+
+      <ConfirmModal
+        isOpen={confirmConfig !== null}
+        title={confirmConfig?.title || ''}
+        message={confirmConfig?.message || ''}
+        type={confirmConfig?.type || 'info'}
+        onConfirm={() => {
+          confirmConfig?.onConfirm();
+          setConfirmConfig(null);
+        }}
+        onCancel={() => setConfirmConfig(null)}
+      />
     </div>
   );
 }
