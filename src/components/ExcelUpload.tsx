@@ -152,6 +152,7 @@ export default function ExcelUpload({
     e.preventDefault();
     if (e.target.files && e.target.files.length > 0) {
       processFiles(Array.from(e.target.files));
+      e.target.value = '';
     }
   };
 
