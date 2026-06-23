@@ -405,7 +405,10 @@ export default function BangKeView({
       // 6. Numbers format
       const soLuong = parseNumber(soLuongRaw) || 0;
       const donGia = parseNumber(donGiaRaw) || 0;
-      const chietKhau = parseNumber(chietKhauRaw) || 0;
+      let chietKhau = parseNumber(chietKhauRaw) || 0;
+      if (chietKhau > 0 && chietKhau < 1) {
+        chietKhau = chietKhau * 100;
+      }
       const thanhTienSauCk = parseNumber(thanhTienSauCkRaw) || (soLuong * donGia * (1 - chietKhau / 100));
 
       // 7. Tax rate parsing - "Thuế suất = lấy từ dòng VAT trong bảng kê nếu có, tách số và bỏ ký hiệu %."

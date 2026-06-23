@@ -3,7 +3,7 @@
  * 1. Vai trò: Tập trung cấu trúc ánh xạ chuẩn 36 cột phục vụ import vào FAST Accounting cho toàn bộ ứng dụng.
  * 2. Non-goal: Không chịu trách nhiệm parse file Excel đầu vào (được đảm nhiệm bởi ExcelUpload component).
  * 3. Invariants:
- *    - Cột `stt` được bỏ trống khi xuất Hợp đồng luân chuyển & Hợp đồng mới (`sttMode: 'blank'`), nhưng được đánh số thứ tự tự tăng từ 1 với Bảng kê (`sttMode: 'sequential'`).
+ *    - Cột `stt` luôn được bỏ trống khi xuất Excel cho cả 3 mẫu (Hợp đồng luân chuyển, Hợp đồng mới, và Bảng kê) để đáp ứng chuẩn FAST Accounting.
  *    - Các trường số/optional (như thuế suất, giá trị, số lượng, đơn giá) bắt buộc có fallback mặc định an toàn (`0` hoặc `''`) để tránh lỗi nạp dữ liệu vào FAST.
  * 4. Khi nào sửa đổi: Khi cấu trúc cột xuất khẩu chuẩn của FAST Accounting thay đổi hoặc cần bổ sung/điều chỉnh định dạng trường xuất ra.
  */
@@ -49,14 +49,14 @@ export function buildFastImportRows(
     'tien_hd4': valueOrEmpty(row.tienHd4),
     'tien_hd5': valueOrEmpty(row.tienHd5),
     'tien_hd6': valueOrEmpty(row.tienHd6),
-    'Giá trị': valueOrZero(row.giaTri ?? row.thanhTienSauCk),
+    'Giá trị': (options.status === 1 || sttMode === 'sequential') ? '' : valueOrZero(row.giaTri ?? row.thanhTienSauCk),
     'ma_vv': valueOrEmpty(row.maVv),
     'Số lượng': valueOrZero(row.soLuong),
     'Đơn giá': valueOrZero(row.donGia),
     'Thuế suất': valueOrZero(row.thueSuat),
     'Giá trị của vv VAT': valueOrZero(row.giaTriCuaVvVat ?? row.giaTriCuaVv),
     'tk_doanh thu': valueOrEmpty(row.tkDoanhThu),
-    'Bảng kê': valueOrEmpty(row.bangKe),
+    'Bảng kê': sttMode === 'sequential' ? '' : valueOrEmpty(row.bangKe),
     'Tỷ lệ ck': valueOrZero(row.tyLeCk),
     'Chuyên trang': valueOrEmpty(row.chuyenTrangImport ?? row.chuyenTrang),
     'Ghi chú chi tiết': valueOrEmpty(row.ghiChuChiTiet ?? row.ghiChu),
@@ -64,7 +64,7 @@ export function buildFastImportRows(
     'Status': options.status,
     '  ': '',
     'Ghi chú tổng': valueOrEmpty(row.ghiChuTong ?? row.fastGhiChu ?? row.ghiChuCol),
-    'stt': sttMode === 'sequential' ? index + 1 : '',
+    'stt': '',
     'Tên sản phẩm': valueOrEmpty(row.sanPhamImport),
   }));
 }

@@ -6,6 +6,16 @@
 
 ## 2026-06-23
 
+### feat: điều chỉnh cột trống và định dạng tỷ lệ chiết khấu khi xuất Excel
+- Bỏ trống Cột T (`Giá trị`) cho Hợp đồng luân chuyển và Bảng kê khi xuất Excel hạch toán.
+- Bỏ trống Cột AA (`Bảng kê`) và Cột AI (`stt`) khi xuất Excel từ màn hình Bảng kê.
+- Định dạng lại Cột AB (`Tỷ lệ ck`) xuất ra số nguyên phần trăm (ví dụ `19` thay vì `0.19`).
+- Chuẩn hóa tỷ lệ chiết khấu lẻ nhập từ Excel nguồn có giá trị nằm trong khoảng `0 < value < 1` để nhân 100 và hiển thị/lưu chính xác trên UI & file xuất.
+- Cập nhật file-level contract trong `fastImport.ts` để đồng bộ invariant của cột `stt`.
+- Files:
+  - [fastImport.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/fastImport.ts)
+  - [BangKeView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/BangKeView.tsx)
+
 ### feat: lọc bỏ các dòng không đủ điều kiện hạch toán khi xuất Excel FAST
 - Bổ sung helper `filterFastImportEligibleRows` trong `fastImport.ts` để lọc bỏ các dòng có trường VAT trống hoặc Tỷ lệ chiết khấu = 100% khi xuất Excel.
 - Tách biệt logic lọc opt-in để không làm ảnh hưởng đến màn hình Bảng kê (`BangKeView.tsx`).
