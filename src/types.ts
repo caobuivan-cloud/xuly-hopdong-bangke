@@ -14,6 +14,8 @@ export interface ExcelSheetData {
   sheetName: string;
   headers: string[];
   rows: Record<string, any>[];
+  headerRowIndex?: number;
+  rawArray?: any[][];
 }
 
 export interface UploadedFileData {

@@ -1,3 +1,15 @@
+/**
+ * @contract src/utils/excel.ts
+ * - Trách nhiệm:
+ *   - Phục vụ các API đọc (parse) dữ liệu từ file Excel và xuất (export) dữ liệu hạch toán sang file .xlsx.
+ *   - Thực hiện tự động phát hiện vị trí dòng chứa header dựa trên từ khóa mẫu (HEADER_KEYWORDS).
+ *   - Lưu trữ và duy trì mảng dữ liệu thô rawArray trong cấu trúc ExcelSheetData để hỗ trợ re-parse động.
+ * - Không chịu trách nhiệm:
+ *   - Không chứa logic nghiệp vụ (business lookup, keyword matching, tính thuế suất, map mã khách).
+ * - Ràng buộc:
+ *   - Mọi thay đổi đối với detectHeaderRowIndex hoặc HEADER_KEYWORDS phải duy trì tính tương thích ngược để không phá vỡ tính năng tự nhận diện của LuanChuyenView và BangKeView.
+ */
+
 import * as XLSX from 'xlsx';
 import { UploadedFileData, ExcelSheetData } from '../types';
 
@@ -25,6 +37,12 @@ const HEADER_KEYWORDS = [
   'ghi chú', 'ghi chu',
   'chiết khấu', 'chiet khau',
   'mã sale', 'ma sale',
+  'số hđ', 'so hd',
+  'dự án', 'du an',
+  'phòng ban', 'phong ban',
+  'tên khách hàng', 'ten khach hang',
+  'loại banner', 'loai banner',
+  'tên banner', 'ten banner',
 ];
 
 const MIN_HEADER_KEYWORD_MATCHES = 2;
@@ -133,6 +151,8 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
             sheetName,
             headers,
             rows: rawRows,
+            headerRowIndex: effectiveHeaderRow,
+            rawArray,
           });
         }
 
@@ -162,6 +182,47 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
     reader.readAsBinaryString(file);
   });
 }
+
+/**
+ * Re-parses an ExcelSheetData object starting from a new header row index.
+ * Uses the saved rawArray to re-extract headers and rows.
+ */
+export function reparseSheetWithHeaderIndex(sheet: ExcelSheetData, newHeaderRowIndex: number): ExcelSheetData {
+  if (!sheet.rawArray || sheet.rawArray.length === 0) {
+    return sheet;
+  }
+
+  // Convert raw 2D array back to a temporary worksheet to parse using XLSX range utilities
+  const tempWorksheet = XLSX.utils.aoa_to_sheet(sheet.rawArray);
+  const rawRows = XLSX.utils.sheet_to_json<any>(tempWorksheet, {
+    defval: '',
+    range: newHeaderRowIndex,
+  });
+
+  const dataRows = sheet.rawArray.slice(newHeaderRowIndex + 1);
+  rawRows.forEach((row, rowIndex) => {
+    row.__cells = dataRows[rowIndex] || [];
+  });
+
+  let headers: string[] = [];
+  if (rawRows.length > 0) {
+    const headerSet = new Set<string>();
+    rawRows.forEach((row) => {
+      Object.keys(row).forEach((key) => {
+        if (!key.startsWith('__')) headerSet.add(key);
+      });
+    });
+    headers = Array.from(headerSet);
+  }
+
+  return {
+    ...sheet,
+    headers,
+    rows: rawRows,
+    headerRowIndex: newHeaderRowIndex,
+  };
+}
+
 
 
 /**

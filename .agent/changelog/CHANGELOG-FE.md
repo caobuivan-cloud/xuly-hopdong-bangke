@@ -6,6 +6,17 @@
 
 ## 2026-06-23
 
+### feat: tự động nhận diện và cấu hình dòng header cho hợp đồng mới
+- Lưu trữ mảng dữ liệu thô `rawArray` và chỉ số dòng header `headerRowIndex` khi parse Excel.
+- Bổ sung helper `reparseSheetWithHeaderIndex` giúp re-parse tệp động từ dữ liệu thô mà không cần upload lại.
+- Tích hợp giao diện hiển thị dòng header (1-based trên UI, 0-based trong code) và selector chọn dòng header thủ công trên UI `HopDongMoiView`.
+- Bổ sung Tooltip giải thích trực quan về cơ chế nhận diện header bên cạnh dropdown chọn dòng header.
+- Tối ưu hóa `HEADER_KEYWORDS` an toàn và tương thích ngược, thực hiện kiểm thử hồi quy toàn bộ hệ thống.
+- Files:
+  - [types.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/types.ts)
+  - [excel.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/excel.ts)
+  - [HopDongMoiView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/HopDongMoiView.tsx)
+
 ### feat: phân nhóm xuất Excel bảng kê & mở rộng độ rộng cột hiển thị
 - Tách nút "Xuất Excel" duy nhất tại màn hình Bảng kê thành 2 nút: **Xuất HĐ mới** và **Xuất HĐ cũ**.
 - HĐ mới: Bao gồm hợp đồng không tồn tại trong FAST hoặc có trạng thái là `2` trong FAST (Tên file: `import_hop_dong_moi_YYYY-MM-DD.xlsx`).

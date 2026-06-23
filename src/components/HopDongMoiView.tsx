@@ -13,7 +13,7 @@ import {
   ContractSettings, UploadedFileData, CustomerMaster, DepartmentMaster, ProductMaster 
 } from '../types';
 import ExcelUpload from './ExcelUpload';
-import { exportToExcel } from '../utils/excel';
+import { exportToExcel, reparseSheetWithHeaderIndex } from '../utils/excel';
 import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fastImport';
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
@@ -163,6 +163,26 @@ export default function HopDongMoiView({
     } else {
       action();
     }
+  };
+
+  const handleHeaderRowChange = (fileIndex: number, newHeaderRowIndex: number) => {
+    setFileMoiList((prevList) => {
+      const updatedList = [...prevList];
+      const targetFile = updatedList[fileIndex];
+      if (targetFile && targetFile.sheets[0]) {
+        const updatedSheet = reparseSheetWithHeaderIndex(targetFile.sheets[0], newHeaderRowIndex);
+        updatedList[fileIndex] = {
+          ...targetFile,
+          sheets: [updatedSheet, ...targetFile.sheets.slice(1)],
+        };
+        writeActionLogToSheet(
+          'Thay đổi dòng header',
+          `Thay đổi dòng header của file "${targetFile.fileName}" sang Dòng ${newHeaderRowIndex + 1}`
+        );
+      }
+      return updatedList;
+    });
+    setProcessedRows(null);
   };
 
   // Active inputs autocomplete manager
@@ -793,18 +813,41 @@ export default function HopDongMoiView({
             <div className="space-y-1.5">
               <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">File đã tải lên ({fileMoiList.length})</div>
               <div className="space-y-1">
-                {fileMoiList.map((file, index) => (
-                  <div key={`${file.fileName}_${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] font-semibold text-slate-700" title={file.fileName}>
-                        {file.fileName} <span className="text-slate-400 font-mono">({file.sheets[0]?.rows.length || 0} dòng)</span>
+                {fileMoiList.map((file, index) => {
+                  const sheet = file.sheets[0];
+                  const detectedHeaderIndex = sheet?.headerRowIndex !== undefined ? sheet.headerRowIndex : 0;
+                  return (
+                    <div key={`${file.fileName}_${index}`} className="flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50/70 p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[11px] font-semibold text-slate-700" title={file.fileName}>
+                            {file.fileName} <span className="text-slate-400 font-mono">({sheet?.rows.length || 0} dòng)</span>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => removeUploadedFile(index, setFileMoiList)} title="Xóa file này khỏi danh sách xử lý" className="h-6 w-6 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition flex-shrink-0">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 border-t border-slate-200/60 pt-2 text-[10px]">
+                        <span className="text-slate-500 font-medium flex items-center gap-1">
+                          <span>Dòng tiêu đề (Header):</span>
+                          <TooltipIcon tooltip="Hệ thống tự động phát hiện dòng chứa tiêu đề cột dựa trên từ khóa mẫu (ví dụ: Số HĐ, Dự án, Tên sale...). Nếu tệp của bạn có dòng tiêu đề bắt đầu ở vị trí khác, vui lòng chọn lại tại đây để hệ thống parse chính xác.">
+                            <HelpCircle className="h-3 w-3 text-slate-400 cursor-help" />
+                          </TooltipIcon>
+                        </span>
+                        <select
+                          value={detectedHeaderIndex}
+                          onChange={(e) => handleHeaderRowChange(index, Number(e.target.value))}
+                          className="px-2 py-0.5 border border-slate-300 rounded bg-white text-slate-750 font-medium focus:ring-1 focus:ring-indigo-500"
+                        >
+                          {Array.from({ length: 10 }).map((_, idx) => (
+                            <option key={idx} value={idx}>Dòng {idx + 1}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
-                    <button type="button" onClick={() => removeUploadedFile(index, setFileMoiList)} title="Xóa file này khỏi danh sách xử lý" className="h-6 w-6 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
