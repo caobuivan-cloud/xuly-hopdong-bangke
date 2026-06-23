@@ -281,14 +281,13 @@ export default function LuanChuyenView({
       let tkDoanhThu = matchResult.tkDoanhThu || getCellValue(row, 'tk_doanh thu', 'tk_doanhthu', 'Tài khoản doanh thu').trim();
       let sanPhamImport = matchResult.tenSanPham || getCellValue(row, 'Sản phầm Import', 'SanPhamImport', 'Tên sản phẩm', 'Sản phẩm').trim();
 
-      // 5. Compute Chuyên trang import = Hình thức QC + " - " + Chuyên trang 
-      // check exception rules
-      const rawImportText = hinhThucQc ? `${hinhThucQc} - ${chuyenTrang}` : chuyenTrang;
-      let exceptionText = applyExceptionRules(rawImportText, config.exceptionRules);
-      if (!exceptionText && chuyenTrang) {
-        exceptionText = applyExceptionRules(chuyenTrang, config.exceptionRules);
+      // 5. Chuyên trang import — ƯU TIÊN rule ngoại lệ trước, xử lý thông thường sau
+      let exceptionText = applyExceptionRules(chuyenTrang, config.exceptionRules);
+      if (!exceptionText && hinhThucQc) {
+        exceptionText = applyExceptionRules(`${hinhThucQc} - ${chuyenTrang}`, config.exceptionRules);
       }
-      const chuyenTrangImport = exceptionText || rawImportText;
+      // Nếu khớp ngoại lệ → dùng ngay, ngược lại mới nối chuỗi thông thường
+      const chuyenTrangImport = exceptionText || (hinhThucQc ? `${hinhThucQc} - ${chuyenTrang}` : chuyenTrang);
 
       // 6. Gather all standard columns
       const maHopDong = getCellValue(row, 'Mã hợp đồng', 'Ma hop dong', 'Hợp đồng').trim();

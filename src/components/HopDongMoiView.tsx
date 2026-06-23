@@ -364,23 +364,37 @@ export default function HopDongMoiView({
       // 10. logic: Sản phẩm Import = Chuẩn hóa Tên sản phẩm
       const sanPhamImport = matchResult.bestMatch?.tenSanPham || '';
 
-      // 11. logic: Chuyên trang import 
+      // 11. logic: Chuyên trang import — ƯU TIÊN rule ngoại lệ trước, xử lý thông thường sau
       const website = getCellValue(row, 'Website').trim();
       const chuyenMuc = getCellValue(row, 'Chuyên mục', 'Chuyen muc').trim();
       const hinhThucQc = getCellValue(row, 'Hình thức QC', 'Hinh thuc QC').trim();
       const nhomWebsite = getCellValue(row, 'Nhóm website', 'Nhom website').trim();
 
-      let rawChuyenTrang = website || nhomWebsite || '';
-      if (chuyenMuc) rawChuyenTrang = rawChuyenTrang ? `${rawChuyenTrang} - ${chuyenMuc}` : chuyenMuc;
-      if (hinhThucQc) {
-        rawChuyenTrang = rawChuyenTrang ? `${hinhThucQc} - ${rawChuyenTrang}` : hinhThucQc;
+      // Kiểm tra rule ngoại lệ trước trên từng trường nguồn
+      let exceptionText = applyExceptionRules(website, config.exceptionRules);
+      if (!exceptionText && nhomWebsite) {
+        exceptionText = applyExceptionRules(nhomWebsite, config.exceptionRules);
+      }
+      if (!exceptionText && chuyenMuc) {
+        exceptionText = applyExceptionRules(chuyenMuc, config.exceptionRules);
+      }
+      if (!exceptionText && hinhThucQc) {
+        exceptionText = applyExceptionRules(hinhThucQc, config.exceptionRules);
       }
 
-      let exceptionText = applyExceptionRules(rawChuyenTrang, config.exceptionRules);
-      if (!exceptionText && website) {
-        exceptionText = applyExceptionRules(website, config.exceptionRules);
+      let chuyenTrangImport: string;
+      if (exceptionText) {
+        // Khớp ngoại lệ → dùng ngay, bỏ qua nối chuỗi thông thường
+        chuyenTrangImport = exceptionText;
+      } else {
+        // Không khớp ngoại lệ → xử lý nối chuỗi thông thường
+        let rawChuyenTrang = website || nhomWebsite || '';
+        if (chuyenMuc) rawChuyenTrang = rawChuyenTrang ? `${rawChuyenTrang} - ${chuyenMuc}` : chuyenMuc;
+        if (hinhThucQc) {
+          rawChuyenTrang = rawChuyenTrang ? `${hinhThucQc} - ${rawChuyenTrang}` : hinhThucQc;
+        }
+        chuyenTrangImport = rawChuyenTrang || getCellValue(row, 'Chuyên trang', 'Chuyen trang').trim();
       }
-      const chuyenTrangImport = exceptionText || rawChuyenTrang || getCellValue(row, 'Chuyên trang', 'Chuyen trang').trim();
 
       // Dates support
       const ngayBatDau = getCellValue(row, 'Ngày bắt đầu', 'Ngay bat dau', 'Từ ngày').trim();

@@ -434,7 +434,7 @@ export default function BangKeView({
 
       const tyLeCk = chietKhau;
 
-      // Exception rules for Chuyên trang
+      // Chuyên trang — ƯU TIÊN rule ngoại lệ trước, xử lý thông thường sau
       let exceptionText = applyExceptionRules(noiDungQuangCao, config.exceptionRules);
       const chuyenTrang = exceptionText || noiDungQuangCao || '';
 
