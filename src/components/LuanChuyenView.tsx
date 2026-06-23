@@ -992,13 +992,13 @@ export default function LuanChuyenView({
                   <tr className="bg-slate-100 text-slate-500 border-b border-slate-250 select-none font-semibold">
                     <th className="py-3 px-3 w-10 text-center font-mono">STT</th>
                     <th className="py-3 px-3 min-w-[120px]">Mã / Tên Hợp Đồng</th>
-                    <th className="py-3 px-3 min-w-[120px]">Khách Hàng & Mã Sale</th>
+                    <th className="py-3 px-3 min-w-[200px]">Khách Hàng & Mã Sale</th>
                     <th className="py-3 px-3 min-w-[180px]">Mã Khách (Autocomplete)</th>
                     <th className="py-3 px-3 min-w-[185px]">Bộ Phận Thực Hiện (Autocomplete)</th>
                     <th className="py-3 px-3 min-w-[200px]">Mã Vụ Việc - ma_vv (Autocomplete)</th>
                     <th className="py-3 px-3 min-w-[130px]">TK Doanh Thu</th>
-                    <th className="py-3 px-3 min-w-[160px]">Sản Phẩm Import</th>
-                    <th className="py-3 px-3 min-w-[150px]">Chuyên Trang Import</th>
+                    <th className="py-3 px-3 min-w-[220px]">Sản Phẩm Import</th>
+                    <th className="py-3 px-3 min-w-[220px]">Chuyên Trang Import</th>
                     <th className="py-3 px-3 min-w-[100px] text-right">Tổng Giá Trị</th>
                     <th className="py-3 px-3 min-w-[110px] text-center">Trạng Thái Fast</th>
                   </tr>
@@ -1048,19 +1048,19 @@ export default function LuanChuyenView({
                           </td>
 
                           {/* Code & Name of Contract */}
-                          <td className="py-3 px-3 whitespace-nowrap">
+                          <td className="py-3 px-3">
                             <div className="font-mono font-bold text-slate-700 text-[11px]">{row.maHopDong || <span className="text-slate-305 italic">N/A</span>}</div>
-                            <div className="text-slate-500 max-w-[200px] truncate text-[11px] mt-0.5" title={row.tenHopDong}>
+                            <div className="text-slate-500 max-w-[240px] whitespace-normal break-words text-[11px] mt-0.5" title={row.tenHopDong}>
                               {row.tenHopDong}
                             </div>
                           </td>
 
                           {/* Raw Customer and Salesperson Name */}
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <div className="font-semibold text-slate-700 text-[11px] max-w-[160px] truncate" title={row.tenKhachHang}>{row.tenKhachHang}</div>
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-slate-700 text-[11px] max-w-[250px] whitespace-normal break-words" title={row.tenKhachHang}>{row.tenKhachHang}</div>
                             <div className="text-[10px] text-slate-400 mt-0.5 flex items-center space-x-1">
                               <span className="font-mono bg-slate-100 px-1 rounded">Sale:</span>
-                              <span className="font-medium truncate max-w-[100px]">{row.tenNvkd || 'N/A'}</span>
+                              <span className="font-medium whitespace-normal break-words max-w-[180px]">{row.tenNvkd || 'N/A'}</span>
                             </div>
                           </td>
 
@@ -1240,22 +1240,20 @@ export default function LuanChuyenView({
 
                           {/* Editable: Sản phẩm Import */}
                           <td className="py-3 px-3">
-                            <input
-                              type="text"
+                            <textarea
                               value={row.sanPhamImport}
                               onChange={(e) => handleUpdateField(row.id, 'sanPhamImport', e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-indigo-505"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-indigo-505 resize-none h-[42px] whitespace-normal break-words"
                               title={row.sanPhamImport}
                             />
                           </td>
 
                           {/* Editable: Chuyên trang Import */}
                           <td className="py-3 px-3">
-                            <input
-                              type="text"
+                            <textarea
                               value={row.chuyenTrangImport}
                               onChange={(e) => handleUpdateField(row.id, 'chuyenTrangImport', e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-indigo-505"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-indigo-505 resize-none h-[42px] whitespace-normal break-words"
                               title={row.chuyenTrangImport}
                             />
                           </td>

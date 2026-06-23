@@ -1140,19 +1140,19 @@ export default function HopDongMoiView({
                           </td>
 
                           {/* Code & Name Contract */}
-                          <td className="py-3 px-3 whitespace-nowrap">
+                          <td className="py-3 px-3">
                             <div className="font-mono font-bold text-slate-700 text-[11px]">{row.maHopDong || <span className="text-rose-400 italic">Chưa nhập</span>}</div>
-                            <div className="text-[10px] text-slate-450 mt-0.5 max-w-[200px] truncate" title={row.tenHopDong}>
+                            <div className="text-[10px] text-slate-450 mt-0.5 max-w-[240px] whitespace-normal break-words" title={row.tenHopDong}>
                               {row.tenHopDong || 'N/A'}
                             </div>
                           </td>
 
                           {/* Ten khach nhap tay */}
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <div className="font-semibold text-slate-750 text-[11px] max-w-[140px] truncate" title={row.tenKhachHang}>
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-slate-755 text-[11px] max-w-[250px] whitespace-normal break-words" title={row.tenKhachHang}>
                               {row.tenKhachHang || 'N/A'}
                             </div>
-                            <div className="text-[10px] text-slate-400 mt-0.5 max-w-[120px] truncate">
+                            <div className="text-[10px] text-slate-400 mt-0.5 max-w-[180px] whitespace-normal break-words">
                               Sale: <span className="font-medium text-slate-600">{row.tenSale || 'K.Hàng Đại Lý'}</span>
                             </div>
                           </td>
@@ -1312,15 +1312,14 @@ export default function HopDongMoiView({
                           {/* Autocomplete: Tên sản phẩm Standard */}
                           <td className="py-3 px-3 relative">
                             <div className="flex items-center border border-slate-200 bg-white rounded-lg px-2 py-1 focus-within:ring-2 focus-within:ring-indigo-505/20 focus-within:border-indigo-500">
-                              <input
-                                type="text"
+                              <textarea
                                 value={row.sanPhamImport}
                                 onChange={(e) => {
                                   handleUpdateField(row.id, 'sanPhamImport', e.target.value);
                                   setActiveAutocomplete({ rowId: row.id, field: 'sanPhamImport', searchQuery: e.target.value });
                                 }}
                                 onFocus={() => setActiveAutocomplete({ rowId: row.id, field: 'sanPhamImport', searchQuery: row.sanPhamImport })}
-                                className="w-full bg-transparent focus:outline-none text-[11px] text-slate-700"
+                                className="w-full bg-transparent focus:outline-none text-[11px] text-slate-700 resize-none h-[42px] whitespace-normal break-words"
                                 placeholder="Standard Product..."
                                 title={row.sanPhamImport}
                               />
@@ -1416,11 +1415,10 @@ export default function HopDongMoiView({
                           {/* Editable: Chuyên Trang Import */}
                           <td className="py-3 px-3">
                             <div className="flex items-center border border-slate-200 bg-white rounded-lg px-2 py-1">
-                              <input
-                                type="text"
+                              <textarea
                                 value={row.chuyenTrangImport}
                                 onChange={(e) => handleUpdateField(row.id, 'chuyenTrangImport', e.target.value)}
-                                className="w-full bg-transparent focus:outline-none text-[11px] text-slate-700"
+                                className="w-full bg-transparent focus:outline-none text-[11px] text-slate-700 resize-none h-[42px] whitespace-normal break-words"
                                 title={row.chuyenTrangImport}
                               />
                             </div>

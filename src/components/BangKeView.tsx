@@ -102,6 +102,11 @@ export default function BangKeView({
   const fileBangKe = useMemo(() => mergeUploadedFiles(fileBangKeList, 'Bảng kê chi tiết'), [fileBangKeList]);
   const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
 
+  const fastLookupMap = useMemo(() => {
+    const sheetFast = fileFast && fileFast.sheets.length > 0 ? fileFast.sheets[0] : null;
+    return sheetFast ? buildFastContractLookup(sheetFast.rows) : new Map();
+  }, [fileFast]);
+
   const replaceUploadedFiles = (
     files: UploadedFileData[],
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
@@ -261,8 +266,6 @@ export default function BangKeView({
       }
     });
 
-        // Pre-build a hash map for O(1) lookups instead of nested loops
-        const fastLookupMap = sheetFast ? buildFastContractLookup(sheetFast.rows) : new Map();
         // Pre-normalize products master list to avoid millions of heavy normalizeText calls inside loop
         const preNormalizedProducts = products.map(p => ({
           ...p,
@@ -599,6 +602,30 @@ export default function BangKeView({
 
         const parsedContractDate = parseContractDateFromBooking(cleanBooking);
         newRow.ngayHopDong = parsedContractDate.text || '';
+
+        // EFR-01: Recompute Fast classification and related fields dynamically on edit
+        let existsInFast = false;
+        let fastStatus = '';
+        let fastMaKhach = '';
+        let fastBoPhanThucHien = '';
+        let fastGhiChu = '';
+
+        if (fastLookupMap && fastLookupMap.size > 0) {
+          const match = lookupFastContractByBooking(fastLookupMap, cleanBooking);
+          if (match) {
+            existsInFast = true;
+            fastStatus = match.fastStatus;
+            fastMaKhach = match.fastMaKhach;
+            fastBoPhanThucHien = match.fastBoPhanThucHien;
+            fastGhiChu = match.fastGhiChu;
+          }
+        }
+
+        newRow.existsInFast = existsInFast;
+        newRow.fastStatus = fastStatus;
+        newRow.maKhach = fastMaKhach || '';
+        newRow.boPhanThucHien = fastBoPhanThucHien || '';
+        newRow.fastGhiChu = fastGhiChu || '';
       }
 
       return newRow;
@@ -738,10 +765,31 @@ export default function BangKeView({
     return { total: processedRows.length, dateErrors, missingFast, missingVv };
   }, [processedRows]);
 
-  const handleExportFile = () => {
+  const handleExportFile = (type: 'new' | 'old') => {
     if (!processedRows || processedRows.length === 0) return;
 
-    const exportSubset = processedRows;
+    // Filter rows based on type
+    // New: tenHopDong doesn't match in fastLookupMap OR matches but status is '2'
+    // Old: matches in fastLookupMap and status is '1'
+    const exportSubset = processedRows.filter(row => {
+      const cleanBooking = String(row.maBooking || '').trim();
+      const match = fastLookupMap && fastLookupMap.size > 0 ? lookupFastContractByBooking(fastLookupMap, cleanBooking) : null;
+      if (type === 'new') {
+        return !match || String(match.fastStatus).trim() === '2';
+      } else {
+        return match && String(match.fastStatus).trim() === '1';
+      }
+    });
+
+    if (exportSubset.length === 0) {
+      setConfirmConfig({
+        title: 'Thông báo',
+        message: `Không có dòng dữ liệu nào thuộc nhóm Hợp đồng ${type === 'new' ? 'MỚI' : 'CŨ'} để xuất khẩu.`,
+        type: 'info',
+        onConfirm: () => {}
+      });
+      return;
+    }
 
     // Check for critical missing values or validation markings before exporting
     const hasWarnings = exportSubset.some(row => 
@@ -753,24 +801,30 @@ export default function BangKeView({
     );
 
     const executeExport = () => {
+      // Build output rows with status = 1 (FAST Accounting requirement)
       const outputData = buildFastImportRows(exportSubset, { status: 1, sttMode: 'sequential' });
 
-      const targetFileName = 'bang_ke_fast_output.xlsx';
+      // Generate file name with current date: import_hop_dong_moi_YYYY-MM-DD.xlsx / import_hop_dong_cu_YYYY-MM-DD.xlsx
+      const todayStr = new Date().toISOString().split('T')[0];
+      const targetFileName = type === 'new' 
+        ? `import_hop_dong_moi_${todayStr}.xlsx` 
+        : `import_hop_dong_cu_${todayStr}.xlsx`;
+
       exportToExcel(
-        [{ sheetName: 'HĐ Đối Soát Fast Import', data: outputData }],
+        [{ sheetName: type === 'new' ? 'HĐ Mới Import' : 'HĐ Cũ Import', data: outputData }],
         targetFileName
       );
 
       writeActionLogToSheet(
         'Xuất Excel bảng kê',
-        `Xuất thành công tệp Excel [${targetFileName}] chứa ${exportSubset.length} dòng.`
+        `Xuất thành công tệp Excel [${targetFileName}] chứa ${exportSubset.length} dòng thuộc nhóm ${type === 'new' ? 'Hợp đồng mới' : 'Hợp đồng cũ'}.`
       );
     };
 
     if (hasWarnings) {
       setConfirmConfig({
         title: '⚠️ CẢNH BÁO PHÁT HIỆN LỖI HẠCH TOÁN',
-        message: 'Sổ xuất Excel chuẩn bị tải xuống có dòng gặp Lịch đăng sai định dạng, thiếu Mã vụ việc thâm căn, thiếu Mã khách hoặc nghi vấn độ chính xác (Confidence Score thấp).\n\nBạn có chắc chắn muốn xuất tệp Excel không?',
+        message: `Sổ xuất Excel ${type === 'new' ? 'Hợp đồng MỚI' : 'Hợp đồng CŨ'} chuẩn bị tải xuống có dòng gặp Lịch đăng sai định dạng, thiếu Mã vụ việc thâm căn, thiếu Mã khách hoặc nghi vấn độ chính xác (Confidence Score thấp).\n\nBạn có chắc chắn muốn xuất tệp Excel không?`,
         type: 'danger',
         onConfirm: executeExport
       });
@@ -801,11 +855,21 @@ export default function BangKeView({
           <>
             <button
               type="button"
-              onClick={handleExportFile}
+              onClick={() => handleExportFile('new')}
               className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer"
+              title="Xuất các HĐ không tồn tại trong FAST hoặc có trạng thái là 2"
             >
               <Download className="h-3.5 w-3.5" />
-              <span>Xuất Excel</span>
+              <span>Xuất HĐ mới</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportFile('old')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer"
+              title="Xuất các HĐ tồn tại trong FAST và có trạng thái là 1"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Xuất HĐ cũ</span>
             </button>
           </>
         )}
@@ -813,7 +877,7 @@ export default function BangKeView({
     );
 
     return () => onHeaderActionsChange?.(null);
-  }, [fileBangKe, fileFast, processedRows, isProcessing, products, config, onHeaderActionsChange]);
+  }, [fileBangKe, fileFast, processedRows, isProcessing, products, config, onHeaderActionsChange, fastLookupMap]);
 
   return (
     <div id={id} className="space-y-6">
@@ -1076,7 +1140,7 @@ export default function BangKeView({
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-205 text-slate-500 font-semibold uppercase tracking-wider select-none font-mono">
                     <th className="py-2.5 px-3 text-center border-r border-slate-200 w-[55px]">STT</th>
-                    <th className="py-2.5 px-3 min-w-[150px]">Thông Tin Hợp Đồng</th>
+                    <th className="py-2.5 px-3 min-w-[200px]">Thông Tin Hợp Đồng</th>
                     <th className="py-2.5 px-3 min-w-[110px]">Mã Booking</th>
                     <th className="py-2.5 px-3 min-w-[140px]">Lịch chạy (Đăng)</th>
                     <th className="py-2.5 px-3 min-w-[100px] text-center">Bắt Đầu</th>
@@ -1085,7 +1149,7 @@ export default function BangKeView({
                     <th className="py-2.5 px-3 min-w-[100px]">Mã Khách Hàng</th>
                     <th className="py-2.5 px-3 min-w-[100px]">BP Thực Hiện</th>
                     <th className="py-2.5 px-3 min-w-[120px]">Mã Vụ Việc</th>
-                    <th className="py-2.5 px-3 min-w-[150px]">Tên Sản Phẩm / Dịch Vụ</th>
+                    <th className="py-2.5 px-3 min-w-[220px]">Tên Sản Phẩm / Dịch Vụ</th>
                     <th className="py-2.5 px-3 min-w-[80px] text-right">Số lượng</th>
                     <th className="py-2.5 px-3 min-w-[90px] text-right">Đơn giá</th>
                     <th className="py-2.5 px-3 min-w-[75px] text-right">Thuế suất %</th>
@@ -1093,8 +1157,8 @@ export default function BangKeView({
                     <th className="py-2.5 px-3 min-w-[110px] text-right">Giá trị VAT</th>
                     <th className="py-2.5 px-3 min-w-[90px]">TK Doanh Thu</th>
                     <th className="py-2.5 px-3 min-w-[70px] text-right">CK %</th>
-                    <th className="py-2.5 px-3 min-w-[150px]">Chuyên trang</th>
-                    <th className="py-2.5 px-3 min-w-[150px]">Ghi chú chi tiết</th>
+                    <th className="py-2.5 px-3 min-w-[220px]">Chuyên trang</th>
+                    <th className="py-2.5 px-3 min-w-[200px]">Ghi chú chi tiết</th>
                     <th className="py-2.5 px-3 min-w-[80px] text-center">Trạng Thái</th>
                   </tr>
                 </thead>
@@ -1152,7 +1216,7 @@ export default function BangKeView({
                             <div className="font-mono font-bold text-slate-800 text-[11px]">
                               {row.maHopDong || <span className="text-rose-400 italic">BK rỗng</span>}
                             </div>
-                            <div className="text-[10px] text-slate-450 mt-0.5 max-w-[150px] truncate" title={row.tenHopDong}>
+                            <div className="text-[10px] text-slate-450 mt-0.5 max-w-[240px] whitespace-normal break-words" title={row.tenHopDong}>
                               {row.tenHopDong || 'N/A'}
                             </div>
                           </td>
@@ -1350,15 +1414,14 @@ export default function BangKeView({
                           {/* Autocomplete: Tên sản phẩm */}
                           <td className="py-3 px-3 relative">
                             <div className="flex items-center border border-transparent hover:border-slate-300 focus-within:border-indigo-500 rounded px-1">
-                              <input
-                                type="text"
+                              <textarea
                                 value={row.sanPhamImport}
                                 onChange={(e) => {
                                   handleUpdateField(row.id, 'sanPhamImport', e.target.value);
                                   setActiveAutocomplete({ rowId: row.id, field: 'sanPhamImport', searchQuery: e.target.value });
                                 }}
                                 onFocus={() => setActiveAutocomplete({ rowId: row.id, field: 'sanPhamImport', searchQuery: row.sanPhamImport })}
-                                className="w-full bg-transparent focus:outline-none text-[11px] font-medium text-slate-700 leading-tight"
+                                className="w-full bg-transparent focus:outline-none text-[11px] font-medium text-slate-700 leading-tight resize-none h-[42px] whitespace-normal break-words"
                                 placeholder="Chuẩn hóa SP..."
                               />
                             </div>
@@ -1478,12 +1541,12 @@ export default function BangKeView({
                           </td>
 
                           {/* Chuyên trang representation */}
-                          <td className="py-3 px-3 max-w-[150px] truncate" title={row.chuyenTrang}>
+                          <td className="py-3 px-3 max-w-[240px] whitespace-normal break-words" title={row.chuyenTrang}>
                             <span className="text-slate-600 font-sans">{row.chuyenTrang}</span>
                           </td>
 
                           {/* Ghi chú chi tiết */}
-                          <td className="py-3 px-3 whitespace-nowrap text-[11px] font-mono text-slate-500">
+                          <td className="py-3 px-3 max-w-[200px] whitespace-normal break-words text-[11px] font-mono text-slate-500">
                             {row.ghiChuChiTiet || <span className="text-slate-300 italic">Trống</span>}
                           </td>
 

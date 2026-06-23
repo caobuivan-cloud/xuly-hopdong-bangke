@@ -6,6 +6,18 @@
 
 ## 2026-06-23
 
+### feat: phân nhóm xuất Excel bảng kê & mở rộng độ rộng cột hiển thị
+- Tách nút "Xuất Excel" duy nhất tại màn hình Bảng kê thành 2 nút: **Xuất HĐ mới** và **Xuất HĐ cũ**.
+- HĐ mới: Bao gồm hợp đồng không tồn tại trong FAST hoặc có trạng thái là `2` trong FAST (Tên file: `import_hop_dong_moi_YYYY-MM-DD.xlsx`).
+- HĐ cũ: Bao gồm hợp đồng tồn tại trong FAST và có trạng thái là `1` (Tên file: `import_hop_dong_cu_YYYY-MM-DD.xlsx`).
+- Cấu hình lại `fastLookupMap` bằng `useMemo` và tự động cập nhật các thuộc tính đối chiếu FAST (`existsInFast`, `fastStatus`, `maKhach`, `boPhanThucHien`, `fastGhiChu`) khi sửa đổi `maBooking` trực tiếp trên UI.
+- Điều chỉnh CSS/Tailwind cho table columns (Tên khách hàng, Chuyên trang, Chuyên trang Import, Tên sản phẩm) trên cả 3 màn hình xem trước (`LuanChuyenView`, `HopDongMoiView`, `BangKeView`): loại bỏ `truncate`/`whitespace-nowrap`, tăng `min-w` và thêm `whitespace-normal break-words`.
+- Thay đổi input của chuyên trang và sản phẩm import trên bảng xem trước thành `<textarea>` để tự động wrap text gọn gàng.
+- Files:
+  - [BangKeView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/BangKeView.tsx)
+  - [HopDongMoiView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/HopDongMoiView.tsx)
+  - [LuanChuyenView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/LuanChuyenView.tsx)
+
 ### feat: điều chỉnh cột trống và định dạng tỷ lệ chiết khấu khi xuất Excel
 - Bỏ trống Cột T (`Giá trị`) cho Hợp đồng luân chuyển và Bảng kê khi xuất Excel hạch toán.
 - Bỏ trống Cột AA (`Bảng kê`) và Cột AI (`stt`) khi xuất Excel từ màn hình Bảng kê.
