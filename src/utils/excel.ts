@@ -43,9 +43,11 @@ const HEADER_KEYWORDS = [
   'tên khách hàng', 'ten khach hang',
   'loại banner', 'loai banner',
   'tên banner', 'ten banner',
+  'loại khách hàng', 'loai khach hang',
+  'số hợp đồng', 'so hop dong',
 ];
 
-const MIN_HEADER_KEYWORD_MATCHES = 2;
+const MIN_HEADER_KEYWORD_MATCHES = 3;
 
 /**
  * Chuẩn hóa chuỗi để so sánh không phân biệt hoa thường và dấu tiếng Việt.
@@ -61,26 +63,41 @@ function normalizeForHeaderDetection(str: string): string {
 
 /**
  * Quét các dòng thô (2D array) để tìm chỉ số dòng tiêu đề thật.
- * Trả về index của dòng header nếu tìm thấy, hoặc -1 nếu không tìm thấy
- * (caller sẽ fallback về dòng 0 — hành vi backward-compatible).
+ * Trả về index của dòng header có số lượt khớp từ khóa nhiều nhất (best match),
+ * hoặc -1 nếu không tìm thấy (lượt khớp tối đa < MIN_HEADER_KEYWORD_MATCHES).
  */
 function detectHeaderRowIndex(rawArray: any[][]): number {
-  for (let i = 0; i < rawArray.length; i++) {
+  let bestRowIndex = -1;
+  let maxMatches = 0;
+
+  // Quét tối đa 20 dòng đầu tiên để tìm dòng header tối ưu nhất
+  const rowsToScan = Math.min(rawArray.length, 20);
+
+  for (let i = 0; i < rowsToScan; i++) {
     const row = rawArray[i];
     if (!Array.isArray(row)) continue;
 
     let matchCount = 0;
     for (const cell of row) {
-      if (cell === null || cell === undefined) continue;
+      if (cell === null || cell === undefined || cell === '') continue;
       const normalized = normalizeForHeaderDetection(String(cell));
       for (const keyword of HEADER_KEYWORDS) {
         if (normalized === keyword || normalized.includes(keyword)) {
           matchCount++;
-          break; // mỗi cell chỉ tính 1 lần
+          break; // mỗi cell chỉ tính tối đa 1 từ khóa
         }
       }
-      if (matchCount >= MIN_HEADER_KEYWORD_MATCHES) return i;
     }
+
+    if (matchCount > maxMatches) {
+      maxMatches = matchCount;
+      bestRowIndex = i;
+    }
+  }
+
+  // Chỉ chấp nhận làm dòng tiêu đề nếu số từ khóa khớp đạt ngưỡng tối thiểu
+  if (maxMatches >= MIN_HEADER_KEYWORD_MATCHES) {
+    return bestRowIndex;
   }
   return -1; // không tìm thấy — fallback về dòng 0
 }

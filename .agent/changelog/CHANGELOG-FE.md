@@ -11,7 +11,8 @@
 - Bổ sung helper `reparseSheetWithHeaderIndex` giúp re-parse tệp động từ dữ liệu thô mà không cần upload lại.
 - Tích hợp giao diện hiển thị dòng header (1-based trên UI, 0-based trong code) và selector chọn dòng header thủ công trên UI `HopDongMoiView`.
 - Bổ sung Tooltip giải thích trực quan về cơ chế nhận diện header bên cạnh dropdown chọn dòng header.
-- Tối ưu hóa `HEADER_KEYWORDS` an toàn và tương thích ngược, thực hiện kiểm thử hồi quy toàn bộ hệ thống.
+- Tối ưu hóa `HEADER_KEYWORDS` an toàn và tương thích ngược, đồng thời bổ sung các từ khóa đặc trưng cho Hợp đồng mới (`loại khách hàng`, `số hợp đồng`).
+- Cải tiến thuật toán `detectHeaderRowIndex` để quét 20 dòng đầu tiên và chọn ra dòng có số lượng từ khóa khớp nhiều nhất (best match) thay vì chỉ chọn dòng đầu tiên vượt ngưỡng thấp, giúp loại bỏ triệt để các cảnh báo giả từ dòng metadata.
 - Files:
   - [types.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/types.ts)
   - [excel.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/excel.ts)
