@@ -21,6 +21,8 @@ import {
 import { dbService, writeActionLogToSheet } from '../services/dbService';
 import ConfirmModal from './ConfirmModal';
 
+type QuickFilter = 'ALL' | 'QUALIFIED' | 'MISSING_KHACH' | 'MISSING_DEPT' | 'MISSING_VV' | 'MISSING_THUE' | 'NEED_CHECK';
+
 interface HopDongMoiViewProps {
   id?: string;
   config: ContractSettings;
@@ -97,6 +99,7 @@ export default function HopDongMoiView({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState(true); // Default: Filter out rows that exist in Fast
   const [vvConfidenceRange, setVvConfidenceRange] = useState({ from: '', to: '' });
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 15;
 
@@ -342,9 +345,15 @@ export default function HopDongMoiView({
         }
       }
 
-      // 7. logic: Giá trị của vv VAT = Thành tiền * Thuế suất
-      const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
-      const giaTriCuaVvVat = Math.round(thanhTien * taxRateMultiplier);
+      // 7. logic: Giá trị của vv VAT (ưu tiên đọc cột từ file nguồn nếu có)
+      const rawVatValue = getCellValue(row, 'Giá trị của vv VAT', 'Giá trị vụ việc VAT', 'Giá trị vụ việc', 'Gia tri cua vv VAT').trim();
+      let giaTriCuaVvVat = 0;
+      if (rawVatValue) {
+        giaTriCuaVvVat = parseNumber(rawVatValue);
+      } else {
+        const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
+        giaTriCuaVvVat = Math.round(thanhTien * taxRateMultiplier);
+      }
 
       // 8. logic: tk_doanh thu
       const tkDoanhThu = matchResult.bestMatch?.tkDoanhThu || '';
@@ -613,6 +622,24 @@ export default function HopDongMoiView({
       // 1. fast list duplicate checks
       if (!shouldKeepRow(row)) return false;
 
+      // 1.5. Apply quickFilter chẩn đoán lỗi
+      if (quickFilter === 'QUALIFIED') {
+        const isMissingKhach = !row.maKhach || !row.maKhach.trim();
+        const isMissingDept = !row.boPhanThucHien || !row.boPhanThucHien.trim();
+        const isMissingVv = !row.maVv || !row.maVv.trim();
+        const isMissingThue = row.thueSuat === undefined || row.thueSuat === null || isNaN(row.thueSuat);
+        const isLowConfidence = row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70;
+        if (isMissingKhach || isMissingDept || isMissingVv || isMissingThue || isLowConfidence) return false;
+      }
+      if (quickFilter === 'MISSING_KHACH' && row.maKhach?.trim()) return false;
+      if (quickFilter === 'MISSING_DEPT' && row.boPhanThucHien?.trim()) return false;
+      if (quickFilter === 'MISSING_VV' && row.maVv?.trim()) return false;
+      if (quickFilter === 'MISSING_THUE' && (row.thueSuat !== undefined && row.thueSuat !== null && !isNaN(row.thueSuat))) return false;
+      if (
+        quickFilter === 'NEED_CHECK' &&
+        !(row.maVv?.trim() && (row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70))
+      ) return false;
+
       const rangeFrom = vvConfidenceRange.from === '' ? 0 : Math.max(0, Math.min(100, Number(vvConfidenceRange.from)));
       const rangeTo = vvConfidenceRange.to === '' ? 100 : Math.max(0, Math.min(100, Number(vvConfidenceRange.to)));
       const lowerConfidence = Math.min(rangeFrom, rangeTo);
@@ -634,12 +661,21 @@ export default function HopDongMoiView({
 
       return true;
     });
-  }, [processedRows, filterActive, fileFast, vvConfidenceRange, searchTerm]);
+  }, [processedRows, filterActive, fileFast, vvConfidenceRange, searchTerm, quickFilter]);
 
-  // Eligible rows for FAST export (exclude empty VAT and 100% discount)
+  // Eligible rows for FAST export (exclude empty VAT and 100% discount, and ALWAYS exclude existing Fast contracts if fileFast is uploaded)
   const eligibleExportRows = useMemo(() => {
-    return filterFastImportEligibleRows(filteredRows);
-  }, [filteredRows]);
+    if (!processedRows) return [];
+    const exportEligible = processedRows.filter(row => {
+      // Bắt buộc loại trừ hợp đồng cũ đã tồn tại trên Fast khi đã nạp file đối soát Fast (status !== 2)
+      if (fileFast) {
+        const isStatus2 = String(row.fastStatus).trim() === '2';
+        if (row.existsInFast && !isStatus2) return false;
+      }
+      return true;
+    });
+    return filterFastImportEligibleRows(exportEligible);
+  }, [processedRows, fileFast]);
 
   // Pagination bounds
   const paginatedRows = useMemo(() => {
@@ -909,22 +945,6 @@ export default function HopDongMoiView({
 
       </div>
 
-      {/* Controller actions */}
-      {fileMoi && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center space-x-3 text-slate-600 text-xs">
-            <Info className="h-5 w-5 text-indigo-500 flex-shrink-0" />
-            <div>
-              <p className="font-semibold text-slate-700">Tệp tin đầu vào sẵn sàng phân tích</p>
-              <p className="text-slate-400">
-                File HĐ Mới: <strong className="font-mono text-indigo-600">[{fileMoi.fileName}]</strong> ({fileMoi.sheets[0]?.rows.length} dòng)
-                {fileFast && <> | File HĐ Fast: <strong className="font-mono text-rose-600">[{fileFast.fileName}]</strong> ({fileFast.sheets[0]?.rows.length} dòng)</>}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {errorMessage && (
         <div className="bg-rose-50 border border-rose-150 p-4 rounded-xl text-rose-800 text-xs flex items-start space-x-2.5">
           <XCircle className="h-5 w-5 text-rose-500 mt-0.5 flex-shrink-0" />
@@ -942,86 +962,136 @@ export default function HopDongMoiView({
       {/* Report presentation workspace */}
       {processedRows && (
         <div className="space-y-6">
-          
-          {/* Integrated stats dashboards */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
-            
-            {/* Total inputs */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 transition">
-              <span className="text-[10px] font-bold text-slate-400 block uppercase font-mono tracking-wider">HĐ Mới tải lên</span>
-              <div className="flex items-baseline space-x-1 mt-1.5">
-                <span className="text-xl font-extrabold text-slate-700">{stats.totalSource}</span>
-                <span className="text-[10px] text-slate-400 font-mono">dòng</span>
-              </div>
-              <span className="text-[9px] text-slate-400 mt-1 block">Tệp gốc ban đầu</span>
-            </div>
-
-            {/* Qualified export */}
-            <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 transition">
-              <span className="text-[10px] font-bold text-indigo-500 block uppercase font-mono tracking-wider">Đủ mốc hạch toán</span>
-              <div className="flex items-baseline space-x-1 mt-1.5">
-                <span className="text-xl font-extrabold text-indigo-700 font-sans">{stats.qualifiedCount}</span>
-                <span className="text-[10px] text-indigo-400 font-mono">dòng</span>
-              </div>
-              <span className="text-[9px] text-indigo-400 mt-1 block">
-                {fileFast ? "Đã lọc trùng khớp Fast" : "Chưa so khớp tệp Fast"}
-              </span>
-            </div>
-
-            {/* Missing customers lookup */}
-            <div className={`border rounded-xl p-4 transition ${stats.missingKhach > 0 ? 'bg-amber-50/40 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.missingKhach > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Thiếu mã khách</span>
-              <div className="flex items-baseline space-x-1 mt-1.5">
-                <span className={`text-xl font-extrabold font-sans ${stats.missingKhach > 0 ? 'text-amber-700' : 'text-slate-700'}`}>{stats.missingKhach}</span>
-                <span className="text-[10px] text-slate-400 font-mono">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-450 mt-1 block">Cần điền Mã KH</span>
-            </div>
-
-            {/* Missing department code */}
-            <div className={`border rounded-xl p-4 transition ${stats.missingDept > 0 ? 'bg-amber-50/40 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.missingDept > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Thiếu bộ phận</span>
-              <div className="flex items-baseline space-x-1 mt-1.5">
-                <span className={`text-xl font-extrabold font-sans ${stats.missingDept > 0 ? 'text-amber-700' : 'text-slate-700'}`}>{stats.missingDept}</span>
-                <span className="text-[10px] text-slate-400 font-mono">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-450 mt-1 block">Bộ phận bán chưa map</span>
-            </div>
-
-            {/* Missing ma_vv */}
-            <div className={`border rounded-xl p-4 transition ${stats.missingVv > 0 ? 'bg-rose-50/40 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.missingVv > 0 ? 'text-rose-600' : 'text-slate-400'}`}>Thiếu mã vụ việc</span>
-              <div className="flex items-baseline space-x-1 mt-1.5">
-                <span className={`text-xl font-extrabold font-sans ${stats.missingVv > 0 ? 'text-rose-700' : 'text-slate-700'}`}>{stats.missingVv}</span>
-                <span className="text-[10px] text-slate-400 font-mono">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-450 mt-1 block">Không khớp keyword</span>
-            </div>
-
-            {/* Missing tax rate */}
-            <div className={`border rounded-xl p-4 transition ${stats.missingThueSuat > 0 ? 'bg-rose-50/40 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.missingThueSuat > 0 ? 'text-rose-600' : 'text-slate-400'}`}>Thiếu thuế suất</span>
-              <div className="flex items-baseline space-x-1 mt-1.5">
-                <span className={`text-xl font-extrabold font-sans ${stats.missingThueSuat > 0 ? 'text-rose-700' : 'text-slate-700'}`}>{stats.missingThueSuat}</span>
-                <span className="text-[10px] text-slate-400 font-mono">lỗi</span>
-              </div>
-              <span className="text-[9px] text-slate-450 mt-1 block">Cần bổ sung/lookup</span>
-            </div>
-
-            {/* Needs check (CAN_KIEM_TRA) */}
-            <div className={`border rounded-xl p-4 transition ${stats.needCheck > 0 ? 'bg-amber-50/40 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-              <span className={`text-[10px] font-bold block uppercase font-mono tracking-wider ${stats.needCheck > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Cần kiểm tra</span>
-              <div className="flex items-baseline space-x-1 mt-1.5">
-                <span className={`text-xl font-extrabold font-sans ${stats.needCheck > 0 ? 'text-amber-700' : 'text-slate-700'}`}>{stats.needCheck}</span>
-                <span className="text-[10px] text-slate-400 font-mono">dòng</span>
-              </div>
-              <span className="text-[9px] text-slate-450 mt-1 block">Confidence match thấp</span>
-            </div>
-
-          </div>
 
           {/* Interactive filter & exporter ribbon */}
-          <div className="bg-slate-900 border border-slate-850 text-white rounded-xl p-5 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="bg-slate-900 border border-slate-850 text-white rounded-xl p-5 shadow-sm flex flex-col gap-4">
+            
+            {/* Tab pills */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => { setQuickFilter('ALL'); setSearchTerm(''); setVvConfidenceRange({ from: '', to: '' }); setFilterActive(false); setCurrentPage(1); }}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition border ${
+                  quickFilter === 'ALL' && !searchTerm
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-205 hover:border-slate-300'
+                }`}
+              >
+                <span>Tất cả</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                  quickFilter === 'ALL' && !searchTerm ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                }`}>{stats.totalSource}</span>
+              </button>
+
+              {fileFast && (
+                <button
+                  type="button"
+                  onClick={() => { setQuickFilter('QUALIFIED'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition border ${
+                    quickFilter === 'QUALIFIED'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-indigo-600 border-indigo-205 hover:border-indigo-400'
+                  }`}
+                >
+                  <span>Đủ điều kiện xuất</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                    quickFilter === 'QUALIFIED' ? 'bg-white/25 text-white' : 'bg-indigo-50 text-indigo-600'
+                  }`}>{stats.qualifiedCount}</span>
+                </button>
+              )}
+
+              {stats.missingKhach > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setQuickFilter('MISSING_KHACH'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'MISSING_KHACH'
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-amber-55 text-amber-700 border-amber-205 hover:border-amber-300'
+                  }`}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Thiếu Mã khách</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'MISSING_KHACH' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'
+                  }`}>{stats.missingKhach}</span>
+                </button>
+              )}
+
+              {stats.missingDept > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setQuickFilter('MISSING_DEPT'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'MISSING_DEPT'
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-amber-55 text-amber-700 border-amber-205 hover:border-amber-300'
+                  }`}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Thiếu Bộ phận</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'MISSING_DEPT' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'
+                  }`}>{stats.missingDept}</span>
+                </button>
+              )}
+
+              {stats.missingVv > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setQuickFilter('MISSING_VV'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'MISSING_VV'
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-rose-55 text-rose-700 border-rose-205 hover:border-rose-300'
+                  }`}
+                >
+                  <XCircle className="h-3 w-3" />
+                  <span>Thiếu Mã vụ việc</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'MISSING_VV' ? 'bg-white/25 text-white' : 'bg-rose-100 text-rose-700'
+                  }`}>{stats.missingVv}</span>
+                </button>
+              )}
+
+              {stats.missingThueSuat > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setQuickFilter('MISSING_THUE'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'MISSING_THUE'
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-rose-55 text-rose-700 border-rose-205 hover:border-rose-300'
+                  }`}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Thiếu Thuế suất</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'MISSING_THUE' ? 'bg-white/25 text-white' : 'bg-rose-100 text-rose-700'
+                  }`}>{stats.missingThueSuat}</span>
+                </button>
+              )}
+
+              {stats.needCheck > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setQuickFilter('NEED_CHECK'); setFilterActive(true); setSearchTerm(''); setCurrentPage(1); }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                    quickFilter === 'NEED_CHECK'
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-amber-55 text-amber-600 border-amber-205 hover:border-amber-300'
+                  }`}
+                >
+                  <HelpCircle className="h-3 w-3" />
+                  <span>Cần kiểm tra</span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    quickFilter === 'NEED_CHECK' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'
+                  }`}>{stats.needCheck}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Bottom row: Search & filters */}
             <div className="flex flex-wrap items-center gap-4">
               
               {/* Search */}
@@ -1053,7 +1123,9 @@ export default function HopDongMoiView({
                   />
                   <span className="font-semibold flex items-center space-x-1">
                     <Filter className="h-3.5 w-3.5 text-indigo-400" />
-                    <span>Lọc loại trừ HĐ đã tồn tại trên Fast ({stats.qualifiedCount} / {stats.totalSource} dòng)</span>
+                    <TooltipIcon tooltip={`Lọc loại trừ các hợp đồng đã tồn tại trên Fast (${stats.qualifiedCount} / {stats.totalSource} dòng)`}>
+                      <span>Loại trừ HĐ cũ</span>
+                    </TooltipIcon>
                   </span>
                 </label>
               )}
@@ -1485,21 +1557,8 @@ export default function HopDongMoiView({
                           </td>
 
                           {/* Fast duplication state */}
-                          <td className="py-3 px-3 text-center whitespace-nowrap">
-                            {row.existsInFast ? (
-                              <div className="flex flex-col items-center">
-                                <span className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-250 rounded-md px-1.5 py-0.5 font-bold font-mono">
-                                  KHỚP FAST
-                                </span>
-                                <span className="text-[8px] text-slate-400 mt-0.5 font-mono">
-                                  {row.fastStatus ? `Tr.Thái: ${row.fastStatus}` : 'Trùng trên Fast'}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-[9px] bg-slate-100 text-slate-450 border border-slate-200 rounded-md px-1.5 py-0.5 font-bold font-mono">
-                                CHƯA CÓ TRÊN FAST
-                              </span>
-                            )}
+                          <td className="py-3 px-3 text-center whitespace-nowrap font-mono text-[11px] font-bold text-slate-700">
+                            {row.fastStatus || ''}
                           </td>
 
                         </tr>

@@ -6,6 +6,18 @@
 
 ## 2026-06-23
 
+### feat(hop-dong-moi): cải tiến UI, tối ưu đọc VAT và cấu hình rỗng cột xuất Excel FAST
+- Ẩn bảng stats dashboard và banner phân tích tệp đầu vào ở trên đầu màn hình Hợp đồng mới.
+- Rút gọn checkbox so khớp lọc trùng Fast thành "Loại trừ HĐ cũ" và hiển thị chi tiết qua TooltipIcon.
+- Thay đổi cột "Trạng thái Fast" chỉ hiển thị giá trị chuỗi trạng thái Fast gốc (`row.fastStatus || ''`), loại bỏ các badge rườm rà.
+- Bổ sung thanh tab lọc nhanh các trạng thái chẩn đoán lỗi (ALL, QUALIFIED, MISSING_KHACH, MISSING_DEPT, MISSING_VV, MISSING_THUE, NEED_CHECK).
+- Cập nhật logic import để ưu tiên đọc trực tiếp "Giá trị của vv VAT" (hoặc các cột tương đương như 'Giá trị vụ việc VAT', 'Giá trị vụ việc', 'Gia tri cua vv VAT') từ file Excel nguồn trước khi tính toán động.
+- Tách biệt logic lấy `eligibleExportRows` giúp việc xuất file Excel FAST độc lập hoàn toàn với tab lọc lỗi, ô tìm kiếm và khoảng lọc trên giao diện (giải quyết EFR-01), đồng thời bắt buộc tự động áp dụng bộ lọc loại trừ HĐ cũ trên Fast khi nạp file Fast đối soát.
+- Cấu hình hàm `buildFastImportRows` để để trống các cột T (`Giá trị`), AC (`Chuyên trang`), AD (`Ghi chú chi tiết`), và AJ (`Tên sản phẩm`) khi xuất Excel cho Hợp đồng mới (status = 2).
+- Files:
+  - [HopDongMoiView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/HopDongMoiView.tsx)
+  - [fastImport.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/fastImport.ts)
+
 ### feat: tự động nhận diện và cấu hình dòng header cho hợp đồng mới
 - Lưu trữ mảng dữ liệu thô `rawArray` và chỉ số dòng header `headerRowIndex` khi parse Excel.
 - Bổ sung helper `reparseSheetWithHeaderIndex` giúp re-parse tệp động từ dữ liệu thô mà không cần upload lại.
