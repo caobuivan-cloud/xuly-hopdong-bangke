@@ -14,7 +14,7 @@ import {
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel } from '../utils/excel';
-import { buildFastImportRows } from '../utils/fastImport';
+import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fastImport';
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
 } from '../utils/businessLogic';
@@ -616,6 +616,11 @@ export default function HopDongMoiView({
     });
   }, [processedRows, filterActive, fileFast, vvConfidenceRange, searchTerm]);
 
+  // Eligible rows for FAST export (exclude empty VAT and 100% discount)
+  const eligibleExportRows = useMemo(() => {
+    return filterFastImportEligibleRows(filteredRows);
+  }, [filteredRows]);
+
   // Pagination bounds
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
@@ -660,10 +665,10 @@ export default function HopDongMoiView({
 
   // Excel output with exactly 36 columns and default Status = 2
   const handleExportFinished = () => {
-    if (!processedRows || filteredRows.length === 0) return;
+    if (!processedRows || eligibleExportRows.length === 0) return;
 
     // Check for critical missing values or validation markings before exporting
-    const hasWarnings = filteredRows.some(row => 
+    const hasWarnings = eligibleExportRows.some(row => 
       !row.ngayBatDau || !row.ngayKetThuc || !row.ngayHopDong || 
       !row.maKhach || !row.maKhach.trim() ||
       !row.boPhanThucHien || !row.boPhanThucHien.trim() ||
@@ -672,7 +677,7 @@ export default function HopDongMoiView({
     );
 
     const executeExport = () => {
-      const dataExcel = buildFastImportRows(filteredRows, { status: 2, sttMode: 'blank' });
+      const dataExcel = buildFastImportRows(eligibleExportRows, { status: 2, sttMode: 'blank' });
 
       exportToExcel(
         [{ sheetName: 'HĐ Mới Fast Import', data: dataExcel }],
@@ -681,7 +686,7 @@ export default function HopDongMoiView({
 
       writeActionLogToSheet(
         'Xuất Excel hợp đồng mới',
-        `Xuất thành công tệp Excel chứa ${filteredRows.length} dòng.`
+        `Xuất thành công tệp Excel chứa ${eligibleExportRows.length} dòng.`
       );
     };
 
@@ -718,20 +723,20 @@ export default function HopDongMoiView({
         {processedRows && (
           <button
             onClick={handleExportFinished}
-            disabled={filteredRows.length === 0}
-            title={`Xuất ${filteredRows.length} dòng - 36 cột`}
+            disabled={eligibleExportRows.length === 0}
+            title={`Xuất ${eligibleExportRows.length} dòng - 36 cột`}
             className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-full transition shadow-sm cursor-pointer disabled:cursor-not-allowed"
           >
             <Download className="h-3.5 w-3.5" />
             <span>Excel</span>
-            <span className="bg-emerald-500/40 text-white text-[10px] font-mono px-1.5 py-0.5 rounded-full">{filteredRows.length}</span>
+            <span className="bg-emerald-500/40 text-white text-[10px] font-mono px-1.5 py-0.5 rounded-full">{eligibleExportRows.length}</span>
           </button>
         )}
       </div>
     );
 
     return () => onHeaderActionsChange?.(null);
-  }, [fileMoi, processedRows, filteredRows, isProcessing, onHeaderActionsChange]);
+  }, [fileMoi, processedRows, eligibleExportRows, isProcessing, onHeaderActionsChange]);
 
   return (
     <div id={id} className="space-y-6">

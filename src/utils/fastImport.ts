@@ -68,3 +68,22 @@ export function buildFastImportRows(
     'Tên sản phẩm': valueOrEmpty(row.sanPhamImport),
   }));
 }
+
+/**
+ * Lọc danh sách dòng hợp đồng đủ điều kiện hạch toán (Fast Import).
+ * Loại bỏ các dòng có:
+ * - Giá trị của vv VAT trống (null, undefined hoặc chuỗi rỗng)
+ * - Tỷ lệ chiết khấu bằng 100%
+ */
+export function filterFastImportEligibleRows(rows: Record<string, any>[]): Record<string, any>[] {
+  return rows.filter((row) => {
+    const vatVal = row.giaTriCuaVvVat !== undefined ? row.giaTriCuaVvVat : row.giaTriCuaVv;
+    const isVatEmpty = vatVal === null || vatVal === undefined || String(vatVal).trim() === '';
+    
+    const discountVal = row.tyLeCk;
+    const isDiscount100 = discountVal !== null && discountVal !== undefined && Number(discountVal) === 100;
+    
+    return !isVatEmpty && !isDiscount100;
+  });
+}
+

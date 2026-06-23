@@ -4,7 +4,17 @@
 > Format: [Conventional Commits](https://www.conventionalcommits.org/)
 > Ngôn ngữ: Tiếng Việt
 
----
+## 2026-06-23
+
+### feat: lọc bỏ các dòng không đủ điều kiện hạch toán khi xuất Excel FAST
+- Bổ sung helper `filterFastImportEligibleRows` trong `fastImport.ts` để lọc bỏ các dòng có trường VAT trống hoặc Tỷ lệ chiết khấu = 100% khi xuất Excel.
+- Tách biệt logic lọc opt-in để không làm ảnh hưởng đến màn hình Bảng kê (`BangKeView.tsx`).
+- Parse và xử lý thêm cột đầu vào `Giá trị của vv VAT` cho màn hình Hợp đồng luân chuyển (`LuanChuyenView.tsx`) thay vì chỉ dùng trường `Giá trị của vv`.
+- Cập nhật hiển thị số lượng dòng thực tế sẽ được xuất trên nút "Excel" của màn hình Hợp đồng luân chuyển và Hợp đồng mới.
+- Files:
+  - [fastImport.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/fastImport.ts)
+  - [LuanChuyenView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/LuanChuyenView.tsx)
+  - [HopDongMoiView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/HopDongMoiView.tsx)
 
 ## 2026-06-20
 
