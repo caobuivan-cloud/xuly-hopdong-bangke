@@ -64,7 +64,7 @@ export function buildFastImportRows(
     ' ': '',
     'Status': options.status,
     '  ': '',
-    'Ghi chú tổng': valueOrEmpty(row.ghiChuTong ?? row.fastGhiChu ?? row.ghiChuCol),
+    'Ghi chú tổng': null,
     'stt': '',
     'Tên sản phẩm': options.status === 2 ? '' : valueOrEmpty(row.sanPhamImport),
   }));
