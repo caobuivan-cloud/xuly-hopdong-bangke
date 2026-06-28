@@ -318,12 +318,15 @@ export function parseNumber(value: any): number {
  * Diễn dịch Lịch đăng chiến dịch / Khoảng ngày hoạt động từ chuỗi tự do.
  * Đầu ra gồm ngày bắt đầu & ngày kết thúc.
  * Hỗ trợ các mẫu đa dạng:
- * - dd/MM/yyyy
- * - M/d/yyyy
- * - dd/MM/yyyy-dd/MM/yyyy
- * - d-d/M/yyyy
- * - d/M-d/M/yyyy
- * - d/M/yy-d/M/yy
+ * - dd/MM/yyyy               → ngày đơn: startDate = ngày đó, endDate = null
+ * - M/d/yyyy                 → ngày đơn: startDate = ngày đó, endDate = null
+ * - dd/MM/yyyy-dd/MM/yyyy    → dải: startDate, endDate đầy đủ
+ * - d-d/M/yyyy               → dải rút gọn cùng tháng/năm
+ * - d/M-d/M/yyyy             → dải rút gọn cùng năm
+ * - d/M/yy-d/M/yy            → dải đầy đủ năm 2 chữ số
+ *
+ * Lưu ý: Khi chỉ có 1 ngày duy nhất (ngày đơn), endDate = null (bỏ trống).
+ * Theo spec nghiệp vụ 2026-06-29: ngày đơn → startDate, endDate để trống.
  */
 export function parsePostingDateRange(value: string): {
   startDate: Date | null;
@@ -381,12 +384,13 @@ export function parsePostingDateRange(value: string): {
       return result;
     }
 
-    // Case D: Single date like dd/MM/yyyy or d/M/yy (Start and End are equal)
+    // Case D: Single date like dd/MM/yyyy or d/M/yy
+    // Spec 2026-06-29: ngày đơn → startDate = ngày đó, endDate = null (bỏ trống)
     const singleMatch = cleanText.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
     if (singleMatch) {
       const dateObj = makeDate(Number(singleMatch[1]), Number(singleMatch[2]), Number(singleMatch[3]));
       result.startDate = dateObj;
-      result.endDate = dateObj;
+      result.endDate = null; // Ngày đơn: không có ngày kết thúc
       return result;
     }
 
@@ -402,7 +406,7 @@ export function parsePostingDateRange(value: string): {
       const sPart = matches[0].split('/');
       const dateObj = makeDate(Number(sPart[0]), Number(sPart[1]), Number(sPart[2]));
       result.startDate = dateObj;
-      result.endDate = dateObj;
+      // Spec 2026-06-29: ngày đơn → endDate = null (bỏ trống)
     }
   } catch (err) {
     // Silent fail and return partial nulls gracefully

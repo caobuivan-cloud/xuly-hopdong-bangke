@@ -6,6 +6,12 @@
 
 ## 2026-06-29
 
+### feat(bangke): để trống ngày kết thúc khi lịch đăng là ngày đơn
+- Thay đổi hành vi của hàm `parsePostingDateRange`: khi Lịch đăng chỉ có một ngày đơn (ví dụ `15/06/2026` hoặc `5/6/26`), Ngày kết thúc (cột T) sẽ để trống (`null`), thay vì sao chép giá trị của Ngày bắt đầu.
+- Giữ nguyên các trường hợp Lịch đăng chứa dải ngày (dải đầy đủ, dải rút gọn, dải cùng năm).
+- Files:
+  - [businessLogic.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/businessLogic.ts)
+
 ### feat(excel): tiêm công thức tính động cho cột Giá trị vv VAT khi xuất Excel
 - Cập nhật hàm exportToExcel để tự động tiêm công thức nội suy (Số lượng * Đơn giá * Tỷ lệ ck * Thuế suất) vào cột "Giá trị của vv VAT" nếu tìm thấy cấu trúc bảng hợp lệ.
 - Sử dụng tọa độ cột động (dựa trên header thực tế) giúp hệ thống không vỡ nếu thứ tự cột thay đổi.
