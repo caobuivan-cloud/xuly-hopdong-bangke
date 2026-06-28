@@ -79,12 +79,12 @@ export function buildFastImportRows(
 export function filterFastImportEligibleRows(rows: Record<string, any>[]): Record<string, any>[] {
   return rows.filter((row) => {
     const vatVal = row.giaTriCuaVvVat !== undefined ? row.giaTriCuaVvVat : row.giaTriCuaVv;
-    const isVatEmpty = vatVal === null || vatVal === undefined || String(vatVal).trim() === '';
+    const isVatEmptyOrZero = vatVal === null || vatVal === undefined || String(vatVal).trim() === '' || Number(vatVal) === 0;
     
     const discountVal = row.tyLeCk;
     const isDiscount100 = discountVal !== null && discountVal !== undefined && Number(discountVal) === 100;
     
-    return !isVatEmpty && !isDiscount100;
+    return !isVatEmptyOrZero && !isDiscount100;
   });
 }
 
