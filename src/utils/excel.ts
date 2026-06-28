@@ -5,7 +5,7 @@
  *   - Thực hiện tự động phát hiện vị trí dòng chứa header dựa trên từ khóa mẫu (HEADER_KEYWORDS).
  *   - Lưu trữ và duy trì mảng dữ liệu thô rawArray trong cấu trúc ExcelSheetData để hỗ trợ re-parse động.
  * - Không chịu trách nhiệm:
- *   - Không chứa logic nghiệp vụ (business lookup, keyword matching, tính thuế suất, map mã khách).
+ *   - Về cơ bản không chứa logic nghiệp vụ sâu, ngoại trừ việc tiêm công thức tính toán Excel tự động cho các cột đặc thù (như Giá trị vv VAT) khi dò thấy đủ cấu trúc cột đầu ra.
  * - Ràng buộc:
  *   - Mọi thay đổi đối với detectHeaderRowIndex hoặc HEADER_KEYWORDS phải duy trì tính tương thích ngược để không phá vỡ tính năng tự nhận diện của LuanChuyenView và BangKeView.
  */
@@ -253,6 +253,49 @@ export function exportToExcel(
 
   for (const sheet of sheets) {
     const ws = XLSX.utils.json_to_sheet(sheet.data);
+
+    // Xử lý tiêm công thức Excel cho cột "Giá trị của vv VAT" nếu có
+    if (sheet.data.length > 0) {
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      const headers: string[] = [];
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ c: C, r: range.s.r });
+        const cell = ws[cellAddress];
+        headers[C] = cell ? cell.v : undefined;
+      }
+
+      const qtyIdx = headers.indexOf('Số lượng');
+      const priceIdx = headers.indexOf('Đơn giá');
+      const discountIdx = headers.indexOf('Tỷ lệ ck');
+      const taxIdx = headers.indexOf('Thuế suất');
+      const targetIdx = headers.indexOf('Giá trị của vv VAT');
+
+      if (qtyIdx !== -1 && priceIdx !== -1 && discountIdx !== -1 && taxIdx !== -1 && targetIdx !== -1) {
+        const qtyCol = XLSX.utils.encode_col(qtyIdx);
+        const priceCol = XLSX.utils.encode_col(priceIdx);
+        const discountCol = XLSX.utils.encode_col(discountIdx);
+        const taxCol = XLSX.utils.encode_col(taxIdx);
+        const targetCol = XLSX.utils.encode_col(targetIdx);
+
+        // Dòng header là r=0, dòng dữ liệu bắt đầu từ r=1 (row 2 trong Excel)
+        for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+          const rowNum = R + 1; // Số thứ tự dòng trong Excel (bắt đầu từ 1)
+          const cellAddress = targetCol + rowNum;
+          let cell = ws[cellAddress];
+          
+          if (!cell) {
+             cell = { t: 'n', v: 0 };
+             ws[cellAddress] = cell;
+          }
+
+          const formula = `${qtyCol}${rowNum}*${priceCol}${rowNum}*${discountCol}${rowNum}/100*(1+${taxCol}${rowNum}/100)`;
+          cell.f = formula;
+          cell.t = 'n';
+          // Giữ nguyên giá trị tĩnh `v` để FAST Accounting có thể import
+        }
+      }
+    }
+
     XLSX.utils.book_append_sheet(wb, ws, sheet.sheetName.substring(0, 31)); // xlsx sheet names are max 31 chars
   }
 

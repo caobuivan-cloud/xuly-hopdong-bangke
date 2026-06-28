@@ -25,6 +25,7 @@
 | HP-02 | Nhấn nút xuất Excel hạch toán ở luồng Hợp đồng luân chuyển hoặc Hợp đồng mới. | File Excel đầu ra được tải xuống, cột `stt` trống hoàn toàn, các thông tin HD1..6 và tiền tương ứng khớp chính xác. |
 | HP-03 | Nhấn nút xuất Excel ở luồng Bảng kê. | File Excel tải xuống có cột `stt` tự động tăng tuần tự từ 1 đến hết danh sách dòng dữ liệu. |
 | HP-04 | Tải lên file Excel có metadata dòng 1-3 và dòng header thật ở dòng 4 (Hợp đồng mới). | Hệ thống tự động nhận diện chính xác dòng 4 làm header, các cột dữ liệu parse khớp hoàn toàn. |
+| HP-05 | Xuất Excel và mở file `.xlsx` bằng ứng dụng MS Excel để kiểm tra thuộc tính cột "Giá trị của vv VAT". | Ô tính tại cột này là một công thức `= Số lượng * Đơn giá * Tỷ lệ ck/100 * (1+Thuế suất/100)`. Khi thay đổi một trong các biến số, ô sẽ tự động nhảy kết quả theo. |
 
 ## 4. Edge / Regression
 

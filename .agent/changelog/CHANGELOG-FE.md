@@ -4,6 +4,15 @@
 > Format: [Conventional Commits](https://www.conventionalcommits.org/)
 > Ngôn ngữ: Tiếng Việt
 
+## 2026-06-29
+
+### feat(excel): tiêm công thức tính động cho cột Giá trị vv VAT khi xuất Excel
+- Cập nhật hàm exportToExcel để tự động tiêm công thức nội suy (Số lượng * Đơn giá * Tỷ lệ ck * Thuế suất) vào cột "Giá trị của vv VAT" nếu tìm thấy cấu trúc bảng hợp lệ.
+- Sử dụng tọa độ cột động (dựa trên header thực tế) giúp hệ thống không vỡ nếu thứ tự cột thay đổi.
+- Bảo lưu giá trị đã tính toán sẵn ở client (thuộc tính `v` của cell) để phần mềm FAST Accounting có thể import an toàn do FAST không tự tính được công thức.
+- Files:
+  - [excel.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/excel.ts)
+
 ## 2026-06-23
 
 ### feat(hop-dong-moi): cải tiến UI, tối ưu đọc VAT và cấu hình rỗng cột xuất Excel FAST
