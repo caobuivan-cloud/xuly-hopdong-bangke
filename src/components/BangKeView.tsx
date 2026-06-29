@@ -272,66 +272,61 @@ export default function BangKeView({
           __normKeyword: normalizeText(p.keyword)
         }));
 
-        // Filter rows up to the "Tổng thành tiền" row
+        // Filter rows up to the "Tổng thành tiền" row by checking the STT column
         const filteredRowsForTable: any[] = [];
         for (const row of sheetBangKe.rows) {
+          const sttValue = getCellValue(row, 'STT', 'stt', 'No').trim();
+          const normalizedVal = normalizeText(sttValue);
+          
           let isTotalRow = false;
-          for (const [key, val] of Object.entries(row)) {
-            if (typeof val !== 'string') continue;
-            const normalizedKey = normalizeText(key);
-            if (normalizedKey.includes('don vi tinh') || normalizedKey === 'dvt') {
-              continue;
-            }
-            const normalizedVal = normalizeText(val);
-            if (
-              // Standard normalized values
-              normalizedVal === 'tong' ||
-              normalizedVal === 'tong cong' ||
-              normalizedVal === 'cong' ||
-              normalizedVal === 'tong thanh tien' ||
-              normalizedVal === 'tong cong thanh tien' ||
-              normalizedVal === 'tong tien' ||
-              normalizedVal === 'tong so tien' ||
-              normalizedVal === 'tong gia tri' ||
-              normalizedVal === 'tong thanh toan' ||
-              normalizedVal === 'tong cong thanh toan' ||
-              normalizedVal === 'cong thanh tien' ||
-              normalizedVal === 'thanh tien' ||
-              normalizedVal === 'cong cong' ||
-              normalizedVal.startsWith('tong thanh tien') ||
-              normalizedVal.startsWith('tong cong') ||
-              normalizedVal.startsWith('tong tien') ||
-              normalizedVal.startsWith('tong so tien') ||
-              normalizedVal.startsWith('tong gia tri') ||
-              normalizedVal.startsWith('tong thanh toan') ||
-              normalizedVal.startsWith('tong cong thanh toan') ||
-              
-              // Decomposed normalized values due to space-insertion normalization bug
-              normalizedVal === 'to ng' ||
-              normalizedVal === 'to ng co ng' ||
-              normalizedVal === 'co ng' ||
-              normalizedVal === 'to ng tha nh tie n' ||
-              normalizedVal === 'to ng co ng tha nh tie n' ||
-              normalizedVal === 'to ng tie n' ||
-              normalizedVal === 'to ng so tie n' ||
-              normalizedVal === 'to ng gia tri' ||
-              normalizedVal === 'to ng tha nh toan' ||
-              normalizedVal === 'to ng co ng tha nh toan' ||
-              normalizedVal === 'co ng tha nh tie n' ||
-              normalizedVal === 'tha nh tie n' ||
-              normalizedVal === 'co ng co ng' ||
-              normalizedVal.startsWith('to ng tha nh tie n') ||
-              normalizedVal.startsWith('to ng co ng') ||
-              normalizedVal.startsWith('to ng tie n') ||
-              normalizedVal.startsWith('to ng so tie n') ||
-              normalizedVal.startsWith('to ng gia tri') ||
-              normalizedVal.startsWith('to ng tha nh toan') ||
-              normalizedVal.startsWith('to ng co ng tha nh toan')
-            ) {
-              isTotalRow = true;
-              break;
-            }
+          if (
+            // Standard normalized values
+            normalizedVal === 'tong' ||
+            normalizedVal === 'tong cong' ||
+            normalizedVal === 'cong' ||
+            normalizedVal === 'tong thanh tien' ||
+            normalizedVal === 'tong cong thanh tien' ||
+            normalizedVal === 'tong tien' ||
+            normalizedVal === 'tong so tien' ||
+            normalizedVal === 'tong gia tri' ||
+            normalizedVal === 'tong thanh toan' ||
+            normalizedVal === 'tong cong thanh toan' ||
+            normalizedVal === 'cong thanh tien' ||
+            normalizedVal === 'thanh tien' ||
+            normalizedVal === 'cong cong' ||
+            normalizedVal.startsWith('tong thanh tien') ||
+            normalizedVal.startsWith('tong cong') ||
+            normalizedVal.startsWith('tong tien') ||
+            normalizedVal.startsWith('tong so tien') ||
+            normalizedVal.startsWith('tong gia tri') ||
+            normalizedVal.startsWith('tong thanh toan') ||
+            normalizedVal.startsWith('tong cong thanh toan') ||
+            
+            // Decomposed normalized values due to space-insertion normalization bug
+            normalizedVal === 'to ng' ||
+            normalizedVal === 'to ng co ng' ||
+            normalizedVal === 'co ng' ||
+            normalizedVal === 'to ng tha nh tie n' ||
+            normalizedVal === 'to ng co ng tha nh tie n' ||
+            normalizedVal === 'to ng tie n' ||
+            normalizedVal === 'to ng so tie n' ||
+            normalizedVal === 'to ng gia tri' ||
+            normalizedVal === 'to ng tha nh toan' ||
+            normalizedVal === 'to ng co ng tha nh toan' ||
+            normalizedVal === 'co ng tha nh tie n' ||
+            normalizedVal === 'tha nh tie n' ||
+            normalizedVal === 'co ng co ng' ||
+            normalizedVal.startsWith('to ng tha nh tie n') ||
+            normalizedVal.startsWith('to ng co ng') ||
+            normalizedVal.startsWith('to ng tie n') ||
+            normalizedVal.startsWith('to ng so tie n') ||
+            normalizedVal.startsWith('to ng gia tri') ||
+            normalizedVal.startsWith('to ng tha nh toan') ||
+            normalizedVal.startsWith('to ng co ng tha nh toan')
+          ) {
+            isTotalRow = true;
           }
+
           if (isTotalRow) {
             break;
           }
