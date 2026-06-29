@@ -32,17 +32,6 @@ export function buildFastContractLookup(rows: any[]): Map<string, FastContractLo
     const key = normalizeContractNameKey(tenHopDong);
     if (!key) return;
 
-    if (key.includes('qc1661225')) {
-      console.log('🔍 LOG CHẨN ĐOÁN FAST:', {
-        excelRowIndex: index + 8,
-        tenHopDong,
-        key,
-        mappedCells: row.__cells,
-        rawRowKeys: Object.keys(row),
-        statusValueRead: getRawCellValue(row, 8),
-      });
-    }
-
     lookup.set(key, {
       fastMaKhach: getRawCellValue(row, 3),
       fastBoPhanThucHien: getRawCellValue(row, 5),
