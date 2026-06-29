@@ -370,6 +370,15 @@ export default function BangKeView({
 
       if (sheetFast) {
           const match = lookupFastContractByBooking(fastLookupMap, maBooking);
+          if (maBooking && maBooking.includes('QC1661225')) {
+            console.log('🔍 LOG CHẨN ĐOÁN BẢNG KÊ:', {
+              maBooking,
+              matchFound: match,
+              searchedKey: normalizeContractNameKey(`${maBooking}/AD`),
+              mapSize: fastLookupMap.size,
+              keyExistsInMap: fastLookupMap.has(normalizeContractNameKey(`${maBooking}/AD`))
+            });
+          }
           if (match) {
             existsInFast = true;
             fastStatus = match.fastStatus;
