@@ -345,15 +345,13 @@ export default function HopDongMoiView({
         }
       }
 
-      // 7. logic: Giá trị của vv VAT (ưu tiên đọc cột từ file nguồn nếu có)
-      const rawVatValue = getCellValue(row, 'Giá trị của vv VAT', 'Giá trị vụ việc VAT', 'Giá trị vụ việc', 'Gia tri cua vv VAT').trim();
-      let giaTriCuaVvVat = 0;
-      if (rawVatValue) {
-        giaTriCuaVvVat = parseNumber(rawVatValue);
-      } else {
-        const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
-        giaTriCuaVvVat = Math.round(thanhTien * taxRateMultiplier);
+      // 7. logic: Giá trị của vv VAT (tính toán đồng nhất với công thức Excel xuất ra để tránh lệch giá trị)
+      let chietKhauPercent = chietKhau;
+      if (chietKhauPercent > 0 && chietKhauPercent < 1) {
+        chietKhauPercent = chietKhauPercent * 100;
       }
+      const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
+      const giaTriCuaVvVat = Math.round(soLuong * donGia * (chietKhauPercent / 100) * (1 + taxRateMultiplier));
 
       // 8. logic: tk_doanh thu
       const tkDoanhThu = matchResult.bestMatch?.tkDoanhThu || '';

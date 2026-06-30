@@ -464,7 +464,7 @@ export default function BangKeView({
 
       const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
       const thueSuatVal = thueSuat > 1 ? thueSuat : thueSuat * 100;
-      const giaTriCuaVvVat = Math.round(thanhTienSauCk * taxRateMultiplier);
+      const giaTriCuaVvVat = Math.round(soLuong * donGia * (chietKhau / 100) * (1 + taxRateMultiplier));
 
       const tyLeCk = chietKhau;
 
