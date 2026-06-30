@@ -378,11 +378,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3">
-            <span className="flex items-center space-x-1.5 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold leading-none border border-emerald-100">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Cơ sở hạch toán: 2026</span>
-            </span>
-
             {(activeTab === AppTab.LUAN_CHUYEN || activeTab === AppTab.HOP_DONG_MOI || activeTab === AppTab.BANG_KE) && headerActions}
 
             {isSyncing && (
