@@ -351,7 +351,7 @@ export default function HopDongMoiView({
         chietKhauPercent = chietKhauPercent * 100;
       }
       const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
-      const giaTriCuaVvVat = Math.round(soLuong * donGia * (chietKhauPercent / 100) * (1 + taxRateMultiplier));
+      const giaTriCuaVvVat = Math.round(soLuong * donGia * (1 - chietKhauPercent / 100) * (1 + taxRateMultiplier));
 
       // 8. logic: tk_doanh thu
       const tkDoanhThu = matchResult.bestMatch?.tkDoanhThu || '';

@@ -289,7 +289,7 @@ export function exportToExcel(
              ws[cellAddress] = cell;
           }
 
-          const formula = `${qtyCol}${rowNum}*${priceCol}${rowNum}*${discountCol}${rowNum}/100*(1+${taxCol}${rowNum}/100)`;
+          const formula = `${qtyCol}${rowNum}*${priceCol}${rowNum}*(1-${discountCol}${rowNum}/100)*(1+${taxCol}${rowNum}/100)`;
           cell.f = formula;
           cell.t = 'n';
           // Giữ nguyên giá trị tĩnh `v` để FAST Accounting có thể import
