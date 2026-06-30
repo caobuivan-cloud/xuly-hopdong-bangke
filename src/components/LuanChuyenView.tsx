@@ -315,10 +315,14 @@ export default function LuanChuyenView({
       const donGia = parseNumber(getCellValue(row, 'Đơn giá', 'Don gia'));
       const thueSuat = parseNumber(getCellValue(row, 'Thuế suất', 'Thue suat') || config.taxRate);
       const giaTriCuaVv = parseNumber(getCellValue(row, 'Giá trị của vv', 'Giá trị vụ việc', 'Gia tri cua vv'));
-      const rawGiaTriCuaVvVat = getCellValue(row, 'Giá trị của vv VAT', 'Giá trị vụ việc VAT', 'Gia tri cua vv VAT').trim();
-      const giaTriCuaVvVat = rawGiaTriCuaVvVat !== '' ? parseNumber(rawGiaTriCuaVvVat) : undefined;
-      const bangKe = getCellValue(row, 'Bảng kê', 'Bang ke').trim();
       const tyLeCk = parseNumber(getCellValue(row, 'Tỷ lệ ck', 'Ty le ck', 'Chiết khấu'));
+      let tyLeCkPercent = tyLeCk;
+      if (tyLeCkPercent > 0 && tyLeCkPercent < 1) {
+        tyLeCkPercent = tyLeCkPercent * 100;
+      }
+      const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
+      const giaTriCuaVvVat = Math.round(soLuong * donGia * (1 - tyLeCkPercent / 100) * (1 + taxRateMultiplier));
+      const bangKe = getCellValue(row, 'Bảng kê', 'Bang ke').trim();
       const ghiChu = getCellValue(row, 'Ghi chú', 'Ghi chu').trim();
       const sanPham = getCellValue(row, 'Sản phẩm', 'San pham').trim();
       const website = getCellValue(row, 'Website').trim();
