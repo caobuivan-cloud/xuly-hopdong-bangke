@@ -170,6 +170,7 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
             rows: rawRows,
             headerRowIndex: effectiveHeaderRow,
             rawArray,
+            merges: worksheet['!merges'] || [],
           });
         }
 

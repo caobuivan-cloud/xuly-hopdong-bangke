@@ -63,11 +63,21 @@ const mergeUploadedFiles = (files: UploadedFileData[], label: string): UploadedF
     primarySheet.headers.forEach((header) => headers.add(header));
     primarySheet.rows.forEach((row) => rows.push({ ...row, __sourceFile: file.fileName }));
   });
+  
+  const firstSheet = files[0]?.sheets[0];
+  
   return {
     fileName: files.length === 1 ? files[0].fileName : `${label} (${files.length} file)`,
     fileSize: files.reduce((total, file) => total + file.fileSize, 0),
     uploadedAt: files[0].uploadedAt,
-    sheets: [{ sheetName: label, headers: Array.from(headers), rows }],
+    sheets: [{ 
+      sheetName: label, 
+      headers: Array.from(headers), 
+      rows,
+      merges: firstSheet?.merges,
+      headerRowIndex: firstSheet?.headerRowIndex,
+      rawArray: firstSheet?.rawArray,
+    }],
   };
 };
 
@@ -274,8 +284,37 @@ export default function BangKeView({
 
         // Filter rows up to the "Tổng thành tiền" row by checking the STT column
         const filteredRowsForTable: any[] = [];
-        for (const row of sheetBangKe.rows) {
+        const merges = sheetBangKe.merges || [];
+        const headerIndex = sheetBangKe.headerRowIndex ?? 0;
+
+        const isSequenceNumber = (val: any): boolean => {
+          if (val === null || val === undefined) return false;
+          const s = String(val).trim();
+          if (s === '') return false;
+          return /^\d+(\.0+)?$/.test(s);
+        };
+
+        for (let i = 0; i < sheetBangKe.rows.length; i++) {
+          const row = sheetBangKe.rows[i];
+          const rIdx = headerIndex + 1 + i;
+
+          // 1. Check if row is in any merge range (from merged cell downward, do not import)
+          const hasMerge = merges.some((m: any) => rIdx >= m.s.r && rIdx <= m.e.r);
+          if (hasMerge) {
+            break;
+          }
+
+          // 2. Check if Column A (STT) is not a sequence number (not a number, do not import)
+          const colAValue = (row.__cells && row.__cells.length > 0) ? row.__cells[0] : '';
           const sttValue = getCellValue(row, 'STT', 'stt', 'No').trim();
+
+          const isColANum = isSequenceNumber(colAValue);
+          const isSttNum = isSequenceNumber(sttValue);
+
+          if (!isColANum && !isSttNum) {
+            break;
+          }
+
           const normalizedVal = normalizeText(sttValue);
           
           let isTotalRow = false;
