@@ -16,7 +16,8 @@ import ExcelUpload from './ExcelUpload';
 import { exportToExcel, reparseSheetWithHeaderIndex } from '../utils/excel';
 import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fastImport';
 import { 
-  normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
+  normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
+  normalizeContractNameKey
 } from '../utils/businessLogic';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
 import ConfirmModal from './ConfirmModal';
@@ -277,8 +278,10 @@ export default function HopDongMoiView({
             const status = String(getCellValue(f, 'Trạng thái', 'Trang thai')).trim();
             const ghiChu = String(getCellValue(f, 'Ghi chú', 'Ghi chu')).trim();
             const val = { fastStatus: status, fastGhiChu: ghiChu };
-            if (fastTen) fastLookupMap.set(normalizeText(fastTen), val);
-            if (fastCode) fastLookupMap.set(normalizeText(fastCode), val);
+            // [FR-02] Note: normalizeContractNameKey strips spaces but retains accents/slashes,
+            // which is robust for contract code/name comparison. normalizeText strips accents and converts to ASCII.
+            if (fastTen) fastLookupMap.set(normalizeContractNameKey(fastTen), val);
+            if (fastCode) fastLookupMap.set(normalizeContractNameKey(fastCode), val);
           });
         }
 
@@ -405,8 +408,8 @@ export default function HopDongMoiView({
       let fastStatus = '';
 
       if (sheetFast) {
-        const normTenHopDong = normalizeText(tenHopDong);
-        const normMaHopDong = normalizeText(maHopDong);
+        const normTenHopDong = normalizeContractNameKey(tenHopDong);
+        const normMaHopDong = normalizeContractNameKey(maHopDong);
         const match = (normTenHopDong && fastLookupMap.get(normTenHopDong)) || 
                       (normMaHopDong && fastLookupMap.get(normMaHopDong));
         if (match) {
@@ -620,8 +623,7 @@ export default function HopDongMoiView({
   // "Lọc các dòng có Tên hợp đồng không tồn tại trong Fast"
   const shouldKeepRow = (row: any) => {
     if (filterActive && fileFast) {
-      const isStatus2 = String(row.fastStatus).trim() === '2';
-      return !row.existsInFast || isStatus2;
+      return !row.existsInFast;
     }
     return true;
   };
@@ -676,13 +678,13 @@ export default function HopDongMoiView({
   }, [processedRows, filterActive, fileFast, vvConfidenceRange, searchTerm, quickFilter]);
 
   // Eligible rows for FAST export (exclude empty VAT and 100% discount, and ALWAYS exclude existing Fast contracts if fileFast is uploaded)
+  // [FR-03] Note: Excel export always excludes duplicates regardless of UI toggle `filterActive` (behavior intentional)
   const eligibleExportRows = useMemo(() => {
     if (!processedRows) return [];
     const exportEligible = processedRows.filter(row => {
-      // Bắt buộc loại trừ hợp đồng cũ đã tồn tại trên Fast khi đã nạp file đối soát Fast (status !== 2)
+      // Bắt buộc loại trừ hợp đồng cũ đã tồn tại trên Fast khi đã nạp file đối soát Fast
       if (fileFast) {
-        const isStatus2 = String(row.fastStatus).trim() === '2';
-        if (row.existsInFast && !isStatus2) return false;
+        if (row.existsInFast) return false;
       }
       return true;
     });
