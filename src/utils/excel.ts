@@ -124,25 +124,26 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
           cellNF: false,
           cellText: true,
         });
+        let targetSheetName = workbook.SheetNames[0];
+        if (workbook.Workbook && workbook.Workbook.Sheets) {
+          for (let i = 0; i < workbook.SheetNames.length; i++) {
+            const sheetMeta = workbook.Workbook.Sheets[i] as any;
+            const isHidden = sheetMeta && (sheetMeta.Hidden === 1 || sheetMeta.Hidden === 2 || sheetMeta.state === 'hidden' || sheetMeta.state === 'veryHidden');
+            if (!isHidden) {
+              targetSheetName = workbook.SheetNames[i];
+              break;
+            }
+          }
+        }
 
         const sheets: ExcelSheetData[] = [];
-
-        for (const sheetName of workbook.SheetNames) {
-          const worksheet = workbook.Sheets[sheetName];
-
+        const worksheet = workbook.Sheets[targetSheetName];
+        if (worksheet) {
           // Bước 1: Đọc thô toàn bộ sheet dạng 2D array (không dùng dòng nào làm header)
           const rawArray = XLSX.utils.sheet_to_json<any[]>(worksheet, {
             header: 1,
             defval: '',
           });
-
-          // Bỏ qua các sheet hoàn toàn rỗng
-          const hasContent = rawArray.some(row =>
-            Array.isArray(row) && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')
-          );
-          if (!hasContent) {
-            continue;
-          }
 
           // Bước 2: Tự động phát hiện dòng tiêu đề thật
           const headerRowIndex = detectHeaderRowIndex(rawArray);
@@ -173,7 +174,7 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
           }
 
           sheets.push({
-            sheetName,
+            sheetName: targetSheetName,
             headers,
             rows: rawRows,
             headerRowIndex: effectiveHeaderRow,
@@ -182,21 +183,10 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
           });
         }
 
-        // Sắp xếp các sheet để đưa sheet chứa dữ liệu tốt nhất lên đầu (index 0)
-        sheets.sort((a, b) => {
-          // Ưu tiên 1: Sheet nhận diện được header thật (headerRowIndex >= 0)
-          const aHasHeader = a.headerRowIndex >= 0;
-          const bHasHeader = b.headerRowIndex >= 0;
-          if (aHasHeader && !bHasHeader) return -1;
-          if (!aHasHeader && bHasHeader) return 1;
-
-          // Ưu tiên 2: Sheet có nhiều dòng dữ liệu hơn
-          return b.rows.length - a.rows.length;
-        });
-
         if (sheets.length === 0) {
           throw new Error('File Excel rỗng hoặc không có sheet hợp lệ.');
         }
+
 
         resolve({
           fileName: file.name,
