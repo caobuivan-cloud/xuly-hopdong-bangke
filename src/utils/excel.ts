@@ -182,6 +182,18 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
           });
         }
 
+        // Sắp xếp các sheet để đưa sheet chứa dữ liệu tốt nhất lên đầu (index 0)
+        sheets.sort((a, b) => {
+          // Ưu tiên 1: Sheet nhận diện được header thật (headerRowIndex >= 0)
+          const aHasHeader = a.headerRowIndex >= 0;
+          const bHasHeader = b.headerRowIndex >= 0;
+          if (aHasHeader && !bHasHeader) return -1;
+          if (!aHasHeader && bHasHeader) return 1;
+
+          // Ưu tiên 2: Sheet có nhiều dòng dữ liệu hơn
+          return b.rows.length - a.rows.length;
+        });
+
         if (sheets.length === 0) {
           throw new Error('File Excel rỗng hoặc không có sheet hợp lệ.');
         }
