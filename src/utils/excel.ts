@@ -136,6 +136,14 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
             defval: '',
           });
 
+          // Bỏ qua các sheet hoàn toàn rỗng
+          const hasContent = rawArray.some(row =>
+            Array.isArray(row) && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')
+          );
+          if (!hasContent) {
+            continue;
+          }
+
           // Bước 2: Tự động phát hiện dòng tiêu đề thật
           const headerRowIndex = detectHeaderRowIndex(rawArray);
           // Nếu không phát hiện được (headerRowIndex === -1), dùng dòng 0 (backward-compatible)
