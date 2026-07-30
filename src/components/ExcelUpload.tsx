@@ -59,7 +59,7 @@ export default function ExcelUpload({
   onUploadManySuccess,
   onUploadError,
   requiredHeaders = [],
-  placeholderText = 'Kéo thả file Excel (.xlsx, .xls) vào đây hoặc click để duyệt file',
+  placeholderText = 'Kéo thả file Excel (.xlsx, .xls, .xlsm) vào đây hoặc click để duyệt file',
   multiple = true,
   compact = false,
   showSuccessDetails = true,
@@ -88,8 +88,8 @@ export default function ExcelUpload({
 
   const validateFileType = (file: File) => {
     const fileExt = file.name.split('.').pop()?.toLowerCase();
-    if (fileExt !== 'xlsx' && fileExt !== 'xls') {
-      throw new Error(`File ${file.name} không đúng định dạng. Vui lòng chỉ tải lên file Excel (.xlsx, .xls)`);
+    if (fileExt !== 'xlsx' && fileExt !== 'xls' && fileExt !== 'xlsm') {
+      throw new Error(`File ${file.name} không đúng định dạng. Vui lòng chỉ tải lên file Excel (.xlsx, .xls, .xlsm)`);
     }
   };
 
@@ -188,7 +188,7 @@ export default function ExcelUpload({
           ref={fileInputRef}
           type="file"
           className="hidden"
-          accept=".xlsx, .xls"
+          accept=".xlsx, .xls, .xlsm"
           multiple={multiple}
           onChange={handleChange}
         />
@@ -209,7 +209,7 @@ export default function ExcelUpload({
                 {placeholderText}
               </p>
               <p className={`${compact ? 'text-[10px]' : 'text-xs'} text-slate-400 font-mono`}>
-                Hỗ trợ định dạng .xlsx, .xls {multiple ? '(có thể chọn nhiều file)' : '(Tối đa 25MB)'}
+                Hỗ trợ định dạng .xlsx, .xls, .xlsm {multiple ? '(có thể chọn nhiều file)' : '(Tối đa 25MB)'}
               </p>
             </div>
           </div>

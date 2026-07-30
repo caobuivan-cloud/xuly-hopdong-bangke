@@ -889,7 +889,7 @@ export default function SettingsView({
                 <span>Nạp File mới</span>
                 <input
                   type="file"
-                  accept=".xlsx, .xls"
+                  accept=".xlsx, .xls, .xlsm"
                   onChange={(e) => handleMasterUpload(e, 'bophan')}
                   className="hidden"
                 />
@@ -1025,7 +1025,7 @@ export default function SettingsView({
                 <span>Nạp File mới</span>
                 <input
                   type="file"
-                  accept=".xlsx, .xls"
+                  accept=".xlsx, .xls, .xlsm"
                   onChange={(e) => handleMasterUpload(e, 'khach')}
                   className="hidden"
                 />
@@ -1161,7 +1161,7 @@ export default function SettingsView({
                 <span>Nạp File mới</span>
                 <input
                   type="file"
-                  accept=".xlsx, .xls"
+                  accept=".xlsx, .xls, .xlsm"
                   onChange={(e) => handleMasterUpload(e, 'sanpham')}
                   className="hidden"
                 />
