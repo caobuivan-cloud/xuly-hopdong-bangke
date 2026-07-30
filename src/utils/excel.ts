@@ -119,7 +119,7 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
         }
 
         const workbook = XLSX.read(data, {
-          type: 'binary',
+          type: 'array',
           cellDates: true,
           cellNF: false,
           cellText: true,
@@ -197,7 +197,7 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
       reject(new Error('Có lỗi xảy ra trong quá trình đọc file.'));
     };
 
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   });
 }
 
