@@ -4,6 +4,18 @@
 > Format: [Conventional Commits](https://www.conventionalcommits.org/)
 > Ngôn ngữ: Tiếng Việt
 
+## 2026-07-30
+
+### fix(excel): chỉ đọc và xử lý sheet unhide (visible) đầu tiên trong file
+- Bổ sung logic duyệt qua danh sách `workbook.SheetNames` kết hợp kiểm tra trạng thái ẩn (`Hidden === 1 || Hidden === 2` hoặc thuộc tính `state === 'hidden' || state === 'veryHidden'`) tại `workbook.Workbook.Sheets` để xác định sheet hiển thị (unhidden) đầu tiên.
+- Chỉ parse dữ liệu của duy nhất sheet hiển thị đầu tiên tìm thấy thay vì quét toàn bộ hoặc sắp xếp lại tất cả các sheet trong file.
+- Hỗ trợ tải lên và parse tệp nhị phân `.xlsm` (Excel chứa Macro) thay thế cơ chế đọc dạng chuỗi nhị phân bằng `ArrayBuffer` an toàn hơn.
+- Cập nhật bộ lọc file (`accept`) trên giao diện tải lên `ExcelUpload.tsx` và màn hình cấu hình `SettingsView.tsx` để chấp nhận thêm định dạng đuôi `.xlsm`.
+- Files:
+  - [excel.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/excel.ts)
+  - [ExcelUpload.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/ExcelUpload.tsx)
+  - [SettingsView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/SettingsView.tsx)
+
 ## 2026-06-29
 
 ### feat(bangke): để trống ngày kết thúc khi lịch đăng là ngày đơn
