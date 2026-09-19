@@ -15,7 +15,7 @@ import {
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel } from '../utils/excel';
-import { buildFastImportRows } from '../utils/fastImport';
+import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fastImport';
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
   parsePostingDateRange, parseContractDateFromBooking, buildFastContractLookup,
@@ -443,8 +443,11 @@ export default function BangKeView({
       const soLuong = parseNumber(soLuongRaw) || 0;
       const donGia = parseNumber(donGiaRaw) || 0;
       let chietKhau = parseNumber(chietKhauRaw) || 0;
-      if (chietKhau > 0 && chietKhau < 1) {
-        chietKhau = chietKhau * 100;
+      // Nếu là số thập phân <= 1 (VD: 0.18 -> 18%, 1 -> 100%) hoặc chuỗi thô chứa '%'
+      if ((chietKhau > 0 && chietKhau <= 1) || String(chietKhauRaw).includes('%')) {
+        if (chietKhau > 0 && chietKhau <= 1) {
+          chietKhau = Math.round(chietKhau * 100);
+        }
       }
       const thanhTienSauCk = parseNumber(thanhTienSauCkRaw) || (soLuong * donGia * (1 - chietKhau / 100));
 
@@ -835,8 +838,20 @@ export default function BangKeView({
     );
 
     const executeExport = () => {
+      // Loại bỏ các dòng chiết khấu 100% hoặc VAT rỗng/bằng 0 theo quy định chuẩn FAST
+      const validRows = filterFastImportEligibleRows(exportSubset);
+      if (validRows.length === 0) {
+        setConfirmConfig({
+          title: 'Thông báo',
+          message: `Tất cả ${exportSubset.length} dòng thuộc nhóm Hợp đồng ${type === 'new' ? 'MỚI' : 'CŨ'} đều có Chiết khấu 100% hoặc Giá trị VAT = 0 nên không có dữ liệu để xuất khẩu.`,
+          type: 'info',
+          onConfirm: () => {}
+        });
+        return;
+      }
+
       // Build output rows with status = 1 (FAST Accounting requirement)
-      const outputData = buildFastImportRows(exportSubset, { status: 1, sttMode: 'sequential' });
+      const outputData = buildFastImportRows(validRows, { status: 1, sttMode: 'sequential' });
 
       // Generate file name with current date: import_hop_dong_moi_YYYY-MM-DD.xlsx / import_hop_dong_cu_YYYY-MM-DD.xlsx
       const todayStr = new Date().toISOString().split('T')[0];
@@ -851,7 +866,7 @@ export default function BangKeView({
 
       writeActionLogToSheet(
         'Xuất Excel bảng kê',
-        `Xuất thành công tệp Excel [${targetFileName}] chứa ${exportSubset.length} dòng thuộc nhóm ${type === 'new' ? 'Hợp đồng mới' : 'Hợp đồng cũ'}.`
+        `Xuất thành công tệp Excel [${targetFileName}] chứa ${validRows.length} dòng thuộc nhóm ${type === 'new' ? 'Hợp đồng mới' : 'Hợp đồng cũ'}.`
       );
     };
 
