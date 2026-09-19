@@ -11,7 +11,8 @@ import {
   Layers
 } from 'lucide-react';
 import { 
-  ContractSettings, UploadedFileData, CustomerMaster, DepartmentMaster, ProductMaster 
+  ContractSettings, UploadedFileData, CustomerMaster, DepartmentMaster, ProductMaster,
+  BangKeTemplateId 
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel } from '../utils/excel';
@@ -19,8 +20,11 @@ import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fast
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
   parsePostingDateRange, parseContractDateFromBooking, buildFastContractLookup,
-  getRawCellValue, lookupFastContractByBooking
+  getRawCellValue, lookupFastContractByBooking, buildGhiChuChiTietIdempotent
 } from '../utils/businessLogic';
+import { 
+  detectBangKeTemplate, getBangKeTemplateHandler, getAllBangKeTemplates 
+} from '../utils/bangKeTemplates';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
 import ConfirmModal from './ConfirmModal';
 import BangKeHeaderMappingModal from './BangKeHeaderMappingModal';
@@ -131,10 +135,24 @@ export default function BangKeView({
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
     const action = () => {
-      setter(files);
+      // Bổ sung id duy nhất và auto-detect template cho bảng kê
+      const enrichedFiles = files.map(file => {
+        const fileId = file.id || `file_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        let templateId = file.templateId;
+        if (!templateId && setter === setFileBangKeList && file.sheets.length > 0) {
+          templateId = detectBangKeTemplate(file.sheets[0]);
+        }
+        return {
+          ...file,
+          id: fileId,
+          templateId,
+        };
+      });
+
+      setter(enrichedFiles);
       setProcessedRows(null);
-      if (files.length > 0) {
-        const fileNames = files.map(f => f.fileName).join(', ');
+      if (enrichedFiles.length > 0) {
+        const fileNames = enrichedFiles.map(f => f.fileName).join(', ');
         const isFast = setter === setFileFastList;
         const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
         writeActionLogToSheet(
@@ -154,6 +172,16 @@ export default function BangKeView({
     } else {
       action();
     }
+  };
+
+  const updateFileTemplate = (fileId: string, newTemplateId: BangKeTemplateId) => {
+    setFileBangKeList(prev => prev.map(f => {
+      if (f.id === fileId) {
+        return { ...f, templateId: newTemplateId };
+      }
+      return f;
+    }));
+    setProcessedRows(null);
   };
 
   const removeUploadedFile = (
@@ -269,8 +297,8 @@ export default function BangKeView({
   const handleProcessBangKe = () => {
     if (isProcessing) return;
 
-    if (!fileBangKe || fileBangKe.sheets.length === 0) {
-      setErrorMessage('Vui lòng tải lên "File Bảng kê" trước khi thực hiện hạch toán.');
+    if (!fileBangKeList || fileBangKeList.length === 0) {
+      setErrorMessage('Vui lòng tải lên ít nhất một "File Bảng kê" trước khi thực hiện hạch toán.');
       return;
     }
 
@@ -278,25 +306,7 @@ export default function BangKeView({
     window.setTimeout(() => {
       try {
         setErrorMessage(null);
-        const sheetBangKe = fileBangKe.sheets[0];
         const sheetFast = fileFast && fileFast.sheets.length > 0 ? fileFast.sheets[0] : null;
-
-        // Scan the sheet for a sheet-wide VAT tax percentage from a VAT row
-        let sheetWideTaxRate: number | null = null;
-        sheetBangKe.rows.forEach((r) => {
-      const combinedRowText = Object.values(r).map(String).join(' ').toLowerCase();
-      if (combinedRowText.includes('vat') || combinedRowText.includes('gtgt') || combinedRowText.includes('thuế')) {
-        const matchPercent = combinedRowText.match(/(\d+)\s*%/);
-        if (matchPercent) {
-          sheetWideTaxRate = Number(matchPercent[1]);
-        } else {
-          const matchVatNum = combinedRowText.match(/vat\s*(\d+)/i) || combinedRowText.match(/gtgt\s*(\d+)/i);
-          if (matchVatNum) {
-            sheetWideTaxRate = Number(matchVatNum[1]);
-          }
-        }
-      }
-    });
 
         // Pre-normalize products master list to avoid millions of heavy normalizeText calls inside loop
         const preNormalizedProducts = products.map(p => ({
@@ -304,358 +314,403 @@ export default function BangKeView({
           __normKeyword: normalizeText(p.keyword)
         }));
 
-        // Unmerge & forward-fill data for vertical merges (except booking column)
-        const merges = sheetBangKe.merges || [];
-        const headerIndex = sheetBangKe.headerRowIndex ?? 0;
-        const rawHeaders = Array.isArray(sheetBangKe.rawArray?.[headerIndex]) 
-          ? sheetBangKe.rawArray[headerIndex] 
-          : (sheetBangKe.headers || []);
+        const suffix = config.contractSuffix || 'AD';
+        const separator = config.contractNameSeparator !== undefined ? config.contractNameSeparator : '/';
 
-        // Identify booking column indices to never forward-fill booking
-        const bookingColIndices = new Set<number>();
-        rawHeaders.forEach((h: any, colIdx: number) => {
-          const norm = normalizeText(h);
-          if (['ma booking', 'booking', 'so booking'].some(k => norm.includes(k))) {
-            bookingColIndices.add(colIdx);
-          }
-        });
-        bookingColIndices.add(1); // Standard Column B is Ma booking
+        const allMappedRows: any[] = [];
+        let globalRowIndex = 0;
 
-        // Clone rows to avoid direct mutation of sheet data while filling values
-        const preparedRows = sheetBangKe.rows.map(r => ({
-          ...r,
-          __cells: Array.isArray(r.__cells) ? [...r.__cells] : []
-        }));
+        // Xử lý độc lập từng file theo templateId của file đó
+        for (const fileItem of fileBangKeList) {
+          const sheetBangKe = fileItem.sheets[0];
+          if (!sheetBangKe) continue;
 
-        merges.forEach((m: any) => {
-          // Check for vertical merge
-          if (m.e.r > m.s.r) {
-            for (let c = m.s.c; c <= m.e.c; c++) {
-              if (bookingColIndices.has(c)) continue; // Do NOT forward-fill booking code
+          const fileTemplateId: BangKeTemplateId = fileItem.templateId || 'STANDARD';
+          const templateHandler = getBangKeTemplateHandler(fileTemplateId);
 
-              const topRowIndex = m.s.r - (headerIndex + 1);
-              if (topRowIndex < 0 || topRowIndex >= preparedRows.length) continue;
+          // 1. Quét thuế suất toàn sheet từ dòng VAT nếu có (chỉ nhận diện tỷ lệ thuế hợp lệ: 0 <= rate <= 100)
+          let sheetWideTaxRate: number | null = null;
+          sheetBangKe.rows.forEach((r) => {
+            const combinedRowText = Object.values(r).map(String).join(' ').toLowerCase();
+            // Bỏ qua các dòng tổng cộng tiền (e.g. "tổng cộng gồm vat", "chưa vat", "tiền vat")
+            if (combinedRowText.includes('tổng cộng') || combinedRowText.includes('tong cong') || combinedRowText.includes('chưa vat') || combinedRowText.includes('chua vat')) {
+              return;
+            }
+            if (combinedRowText.includes('vat') || combinedRowText.includes('gtgt') || combinedRowText.includes('thuế') || combinedRowText.includes('thue')) {
+              // Ưu tiên định dạng có dấu %: e.g. "VAT 8%", "Thuế 10%"
+              const matchPercent = combinedRowText.match(/(?:vat|gtgt|thuế|thue)?[^\d%]{0,10}(\d{1,2})\s*%/i);
+              if (matchPercent) {
+                const parsedRate = Number(matchPercent[1]);
+                if (parsedRate >= 0 && parsedRate <= 100) {
+                  sheetWideTaxRate = parsedRate;
+                }
+              } else {
+                // Khớp "VAT 8", "VAT 10", "GTGT 8" (chỉ lấy số 1 hoặc 2 chữ số)
+                const matchVatNum = combinedRowText.match(/(?:vat|gtgt)\s*(\d{1,2})\b/i);
+                if (matchVatNum) {
+                  const parsedRate = Number(matchVatNum[1]);
+                  if (parsedRate >= 0 && parsedRate <= 100) {
+                    sheetWideTaxRate = parsedRate;
+                  }
+                }
+              }
+            }
+          });
 
-              const topRow = preparedRows[topRowIndex];
-              const headerKey = rawHeaders[c] || Object.keys(topRow).find(k => !k.startsWith('__') && topRow[k] !== undefined);
-              const topVal = (topRow.__cells && topRow.__cells[c] !== undefined && topRow.__cells[c] !== '')
-                ? topRow.__cells[c]
-                : (headerKey ? topRow[headerKey] : '');
+          // 2. Unmerge & forward-fill data for vertical merges (except booking column)
+          const merges = sheetBangKe.merges || [];
+          const headerIndex = sheetBangKe.headerRowIndex ?? 0;
+          const rawHeaders = Array.isArray(sheetBangKe.rawArray?.[headerIndex]) 
+            ? sheetBangKe.rawArray[headerIndex] 
+            : (sheetBangKe.headers || []);
 
-              if (topVal !== undefined && topVal !== null && String(topVal).trim() !== '') {
-                for (let r = m.s.r + 1; r <= m.e.r; r++) {
-                  const targetRowIdx = r - (headerIndex + 1);
-                  if (targetRowIdx >= 0 && targetRowIdx < preparedRows.length) {
-                    const targetRow = preparedRows[targetRowIdx];
-                    if (targetRow.__cells) {
-                      targetRow.__cells[c] = topVal;
-                    }
-                    if (headerKey) {
-                      targetRow[headerKey] = topVal;
+          // Identify booking column indices to never forward-fill booking
+          const bookingColIndices = new Set<number>();
+          rawHeaders.forEach((h: any, colIdx: number) => {
+            const norm = normalizeText(h);
+            if (['ma booking', 'booking', 'so booking', 'ma book', 'hop dong'].some(k => norm.includes(k))) {
+              bookingColIndices.add(colIdx);
+            }
+          });
+          bookingColIndices.add(1); // Standard Column B is Ma booking
+
+          // Clone rows to avoid direct mutation of sheet data while filling values
+          const preparedRows = sheetBangKe.rows.map(r => ({
+            ...r,
+            __cells: Array.isArray(r.__cells) ? [...r.__cells] : []
+          }));
+
+          merges.forEach((m: any) => {
+            if (m.e.r > m.s.r) {
+              for (let c = m.s.c; c <= m.e.c; c++) {
+                if (bookingColIndices.has(c)) continue; // Do NOT forward-fill booking code
+
+                const topRowIndex = m.s.r - (headerIndex + 1);
+                if (topRowIndex < 0 || topRowIndex >= preparedRows.length) continue;
+
+                const topRow = preparedRows[topRowIndex];
+                const headerKey = rawHeaders[c] || Object.keys(topRow).find(k => !k.startsWith('__') && topRow[k] !== undefined);
+                const topVal = (topRow.__cells && topRow.__cells[c] !== undefined && topRow.__cells[c] !== '')
+                  ? topRow.__cells[c]
+                  : (headerKey ? topRow[headerKey] : '');
+
+                if (topVal !== undefined && topVal !== null && String(topVal).trim() !== '') {
+                  for (let r = m.s.r + 1; r <= m.e.r; r++) {
+                    const targetRowIdx = r - (headerIndex + 1);
+                    if (targetRowIdx >= 0 && targetRowIdx < preparedRows.length) {
+                      const targetRow = preparedRows[targetRowIdx];
+                      if (targetRow.__cells) {
+                        targetRow.__cells[c] = topVal;
+                      }
+                      if (headerKey) {
+                        targetRow[headerKey] = topVal;
+                      }
                     }
                   }
                 }
               }
             }
-          }
-        });
+          });
 
-        // Filter rows up to the "Tổng thành tiền" row by checking the STT column
-        const filteredRowsForTable: any[] = [];
-
-        const isSequenceNumber = (val: any): boolean => {
-          if (val === null || val === undefined) return false;
-          const s = String(val).trim();
-          if (s === '') return false;
-          return /^\d+(\.0+)?$/.test(s);
-        };
-
-        for (let i = 0; i < preparedRows.length; i++) {
-          const row = preparedRows[i];
-          const rIdx = headerIndex + 1 + i;
-
-          // 1. Check if row is in a horizontal merge range across header columns (e.g. from col A to col C or more, typical for 'Tổng thành tiền' rows)
-          const hasHorizontalMerge = merges.some((m: any) => 
-            rIdx >= m.s.r && rIdx <= m.e.r && m.s.c === 0 && m.e.c >= 2
-          );
-          if (hasHorizontalMerge) {
-            break;
-          }
-
-          // 2. Check if Column A (STT) is not a sequence number (not a number, do not import)
-          const colAValue = (row.__cells && row.__cells.length > 0) ? row.__cells[0] : '';
-          const sttValue = getCellValue(row, 'STT', 'stt', 'No').trim();
-
-          const isColANum = isSequenceNumber(colAValue);
-          const isSttNum = isSequenceNumber(sttValue);
-
-          if (!isColANum && !isSttNum) {
-            break;
-          }
-
-          const normalizedVal = normalizeText(sttValue);
-          
-          let isTotalRow = false;
-          if (
-            // Standard normalized values
-            normalizedVal === 'tong' ||
-            normalizedVal === 'tong cong' ||
-            normalizedVal === 'cong' ||
-            normalizedVal === 'tong thanh tien' ||
-            normalizedVal === 'tong cong thanh tien' ||
-            normalizedVal === 'tong tien' ||
-            normalizedVal === 'tong so tien' ||
-            normalizedVal === 'tong gia tri' ||
-            normalizedVal === 'tong thanh toan' ||
-            normalizedVal === 'tong cong thanh toan' ||
-            normalizedVal === 'cong thanh tien' ||
-            normalizedVal === 'thanh tien' ||
-            normalizedVal === 'cong cong' ||
-            normalizedVal.startsWith('tong thanh tien') ||
-            normalizedVal.startsWith('tong cong') ||
-            normalizedVal.startsWith('tong tien') ||
-            normalizedVal.startsWith('tong so tien') ||
-            normalizedVal.startsWith('tong gia tri') ||
-            normalizedVal.startsWith('tong thanh toan') ||
-            normalizedVal.startsWith('tong cong thanh toan') ||
-            
-            // Decomposed normalized values due to space-insertion normalization bug
-            normalizedVal === 'to ng' ||
-            normalizedVal === 'to ng co ng' ||
-            normalizedVal === 'co ng' ||
-            normalizedVal === 'to ng tha nh tie n' ||
-            normalizedVal === 'to ng co ng tha nh tie n' ||
-            normalizedVal === 'to ng tie n' ||
-            normalizedVal === 'to ng so tie n' ||
-            normalizedVal === 'to ng gia tri' ||
-            normalizedVal === 'to ng tha nh toan' ||
-            normalizedVal === 'to ng co ng tha nh toan' ||
-            normalizedVal === 'co ng tha nh tie n' ||
-            normalizedVal === 'tha nh tie n' ||
-            normalizedVal === 'co ng co ng' ||
-            normalizedVal.startsWith('to ng tha nh tie n') ||
-            normalizedVal.startsWith('to ng co ng') ||
-            normalizedVal.startsWith('to ng tie n') ||
-            normalizedVal.startsWith('to ng so tie n') ||
-            normalizedVal.startsWith('to ng gia tri') ||
-            normalizedVal.startsWith('to ng tha nh toan') ||
-            normalizedVal.startsWith('to ng co ng tha nh toan')
-          ) {
-            isTotalRow = true;
-          }
-
-          if (isTotalRow) {
-            break;
-          }
-          filteredRowsForTable.push(row);
-        }
-
-        // Auto Data Pattern Sampling (tối đa 3 dòng dữ liệu đầu tiên)
-        // Nhận diện tự động cột "Lịch chạy/đăng" khi tiêu đề cột không khớp bất kỳ từ khóa nào
-        let autoDetectedLichDangKey: string | null = null;
-        if (filteredRowsForTable.length > 0) {
-          const sampleRows = filteredRowsForTable.slice(0, 3);
-          const sampleKeys = Object.keys(filteredRowsForTable[0] || {});
-          
-          const isDatePatternValue = (val: any): boolean => {
-            if (!val) return false;
+          // 3. Lọc dòng đến dòng Tổng
+          const filteredRowsForTable: any[] = [];
+          const isSequenceNumber = (val: any): boolean => {
+            if (val === null || val === undefined) return false;
             const s = String(val).trim();
-            return (
-              /^\d{1,2}\/\d{1,2}\/\d{2,4}\s*[-–~to|den]+\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
-              /^\d{1,2}\s*[-–~]\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
-              /^\d{1,2}\/\d{1,2}\s*[-–~]\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
-              /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)
-            );
+            if (s === '') return false;
+            return /^\d+(\.0+)?$/.test(s);
           };
 
-          for (const key of sampleKeys) {
-            if (key.startsWith('__EMPTY') || key.toLowerCase() === 'stt') continue;
-            let matchCount = 0;
-            for (const r of sampleRows) {
-              if (isDatePatternValue(r[key])) {
-                matchCount++;
+          for (let i = 0; i < preparedRows.length; i++) {
+            const row = preparedRows[i];
+            const rIdx = headerIndex + 1 + i;
+
+            const hasHorizontalMerge = merges.some((m: any) => 
+              rIdx >= m.s.r && rIdx <= m.e.r && m.s.c === 0 && m.e.c >= 2
+            );
+            if (hasHorizontalMerge) break;
+
+            const colAValue = (row.__cells && row.__cells.length > 0) ? row.__cells[0] : '';
+            const sttValue = getCellValue(row, 'STT', 'stt', 'No').trim();
+
+            const isColANum = isSequenceNumber(colAValue);
+            const isSttNum = isSequenceNumber(sttValue);
+
+            if (!isColANum && !isSttNum) break;
+
+            const normalizedVal = normalizeText(sttValue);
+            let isTotalRow = false;
+            if (
+              normalizedVal === 'tong' ||
+              normalizedVal === 'tong cong' ||
+              normalizedVal === 'cong' ||
+              normalizedVal === 'tong thanh tien' ||
+              normalizedVal === 'tong cong thanh tien' ||
+              normalizedVal === 'tong tien' ||
+              normalizedVal === 'tong so tien' ||
+              normalizedVal === 'tong gia tri' ||
+              normalizedVal === 'tong thanh toan' ||
+              normalizedVal === 'tong cong thanh toan' ||
+              normalizedVal === 'cong thanh tien' ||
+              normalizedVal === 'thanh tien' ||
+              normalizedVal === 'cong cong' ||
+              normalizedVal.startsWith('tong thanh tien') ||
+              normalizedVal.startsWith('tong cong') ||
+              normalizedVal.startsWith('tong tien') ||
+              normalizedVal.startsWith('tong so tien') ||
+              normalizedVal.startsWith('tong gia tri') ||
+              normalizedVal.startsWith('tong thanh toan') ||
+              normalizedVal.startsWith('tong cong thanh toan') ||
+              normalizedVal === 'to ng' ||
+              normalizedVal === 'to ng co ng' ||
+              normalizedVal === 'co ng' ||
+              normalizedVal === 'to ng tha nh tie n' ||
+              normalizedVal === 'to ng co ng tha nh tie n' ||
+              normalizedVal === 'to ng tie n' ||
+              normalizedVal === 'to ng so tie n' ||
+              normalizedVal === 'to ng gia tri' ||
+              normalizedVal === 'to ng tha nh toan' ||
+              normalizedVal === 'to ng co ng tha nh toan' ||
+              normalizedVal === 'co ng tha nh tie n' ||
+              normalizedVal === 'tha nh tie n' ||
+              normalizedVal === 'co ng co ng' ||
+              normalizedVal.startsWith('to ng tha nh tie n') ||
+              normalizedVal.startsWith('to ng co ng') ||
+              normalizedVal.startsWith('to ng tie n') ||
+              normalizedVal.startsWith('to ng so tie n') ||
+              normalizedVal.startsWith('to ng gia tri') ||
+              normalizedVal.startsWith('to ng tha nh toan') ||
+              normalizedVal.startsWith('to ng co ng tha nh toan')
+            ) {
+              isTotalRow = true;
+            }
+
+            if (isTotalRow) break;
+            filteredRowsForTable.push(row);
+          }
+
+          // Auto Data Pattern Sampling cho lịch đăng nếu cần
+          let autoDetectedLichDangKey: string | null = null;
+          if (filteredRowsForTable.length > 0) {
+            const sampleRows = filteredRowsForTable.slice(0, 3);
+            const sampleKeys = Object.keys(filteredRowsForTable[0] || {});
+            
+            const isDatePatternValue = (val: any): boolean => {
+              if (!val) return false;
+              const s = String(val).trim();
+              return (
+                /^\d{1,2}\/\d{1,2}\/\d{2,4}\s*[-–~to|den]+\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
+                /^\d{1,2}\s*[-–~]\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
+                /^\d{1,2}\/\d{1,2}\s*[-–~]\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
+                /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)
+              );
+            };
+
+            for (const key of sampleKeys) {
+              if (key.startsWith('__EMPTY') || key.toLowerCase() === 'stt') continue;
+              let matchCount = 0;
+              for (const r of sampleRows) {
+                if (isDatePatternValue(r[key])) {
+                  matchCount++;
+                }
+              }
+              if (matchCount >= 1) {
+                autoDetectedLichDangKey = key;
+                break;
               }
             }
-            // Nếu có ít nhất 1 dòng trong 3 dòng mẫu khớp định dạng ngày
-            if (matchCount >= 1) {
-              autoDetectedLichDangKey = key;
-              break;
+          }
+
+          // 4. Map từng row qua Adapter của Template
+          for (let rowIndex = 0; rowIndex < filteredRowsForTable.length; rowIndex++) {
+            const rawRow = filteredRowsForTable[rowIndex];
+            
+            // Chạy qua transformRow của template tương ứng
+            const normalized = templateHandler.transformRow(rawRow);
+            if (!normalized) {
+              // Row bị lọc bỏ (ví dụ WPP dòng tiền null hoặc <= 0)
+              continue;
             }
+
+            // Raw inputs extract fallback
+            const sttCol = normalized.stt ? String(normalized.stt) : getFieldValue(rawRow, 'stt', ['STT', 'stt', 'No']).trim();
+            const maBooking = normalized.maBooking || getRawCellValue(rawRow, 1) || getFieldValue(rawRow, 'maBooking', ['Mã booking', 'Ma booking', 'Booking']).trim();
+            const soHt = normalized.soHt || getFieldValue(rawRow, 'soHt', ['Số HT', 'So HT', 'HT', 'Hệ thống']).trim();
+            const nhan = getFieldValue(rawRow, 'nhan', ['Nhãn', 'Nhan', 'Brand', 'Thương hiệu']).trim();
+            const noiDungQuangCao = normalized.noiDung || getFieldValue(rawRow, 'noiDungQuangCao', ['Nội dung quảng cáo', 'Noi dung quang cao', 'Nội dung', 'Diễn giải']).trim();
+            const chiTiet = normalized.chuyenTrang || getFieldValue(rawRow, 'chiTiet', ['Chi tiết', 'Chi tiet', 'Chi tiết chạy']).trim();
+            
+            let lichDang = normalized.lichDang || getFieldValue(rawRow, 'lichDang', ['Lịch đăng', 'Lich dang', 'Lịch chạy', 'Lich chay', 'Thời gian chạy', 'Thoi gian chay', 'Thời gian', 'Thoi gian']).trim();
+            if (!lichDang && autoDetectedLichDangKey && rawRow[autoDetectedLichDangKey] !== undefined) {
+              lichDang = String(rawRow[autoDetectedLichDangKey]).trim();
+            }
+
+            const donViTinh = getFieldValue(rawRow, 'donViTinh', ['Đơn vị tính', 'Don vi tinh', 'ĐVT', 'DVT']).trim();
+            const soLuongRaw = normalized.soLuong !== undefined ? String(normalized.soLuong) : getFieldValue(rawRow, 'soLuong', ['Số lượng', 'So luong', 'Qty']).trim();
+            const donGiaRaw = normalized.donGia !== undefined ? String(normalized.donGia) : getFieldValue(rawRow, 'donGia', ['Đơn giá', 'Don gia', 'Price']).trim();
+            const chietKhauRaw = normalized.chietKhau !== undefined ? String(normalized.chietKhau) : getFieldValue(rawRow, 'chietKhau', ['Chiết khấu', 'Chiet khau', 'CK']).trim();
+            const ghiChuCol = getFieldValue(rawRow, 'ghiChu', ['Ghi chú', 'Ghi chu', 'Note']).trim();
+
+            const maHopDong = maBooking ? `${maBooking}${suffix}` : '';
+            const tenHopDong = maBooking ? `${maBooking}${separator}${suffix}` : '';
+
+            // Fast contract lookup
+            let existsInFast = false;
+            let fastStatus = '';
+            let fastMaKhach = '';
+            let fastBoPhanThucHien = '';
+            let fastGhiChu = '';
+
+            if (sheetFast) {
+              const match = lookupFastContractByBooking(fastLookupMap, maBooking);
+              if (match) {
+                existsInFast = true;
+                fastStatus = match.fastStatus;
+                fastMaKhach = match.fastMaKhach;
+                fastBoPhanThucHien = match.fastBoPhanThucHien;
+                fastGhiChu = match.fastGhiChu;
+              }
+            }
+
+            // Parse ngày đăng
+            const parsedDateRange = parsePostingDateRange(lichDang);
+            const formatDateDayLocal = (d: Date | null): string => {
+              if (!d) return '';
+              const day = String(d.getDate()).padStart(2, '0');
+              const month = String(d.getMonth() + 1).padStart(2, '0');
+              const year = d.getFullYear();
+              return `${day}/${month}/${year}`;
+            };
+            const ngayBatDau = formatDateDayLocal(parsedDateRange.startDate);
+            const ngayKetThuc = formatDateDayLocal(parsedDateRange.endDate);
+
+            const parsedContractDate = parseContractDateFromBooking(maBooking);
+            const ngayHopDong = parsedContractDate.text || '';
+
+            // 5. Product lookup via Normalized Precedence (Ưu tiên normalized.lookupContent -> normalized.chuyenTrang -> noiDungQuangCao)
+            const textToLookup = normalized.lookupContent || normalized.chuyenTrang || noiDungQuangCao;
+            let matchResult = keywordMatch(textToLookup, preNormalizedProducts);
+            // Fallback: nếu lookup theo textToLookup không tìm thấy mà có noiDungQuangCao khác biệt, thử lookup tiếp theo noiDungQuangCao
+            if ((!matchResult.bestMatch || matchResult.status === 'KHONG_MATCH') && noiDungQuangCao && noiDungQuangCao !== textToLookup) {
+              const fallbackMatch = keywordMatch(noiDungQuangCao, preNormalizedProducts);
+              if (fallbackMatch.bestMatch && fallbackMatch.status !== 'KHONG_MATCH') {
+                matchResult = fallbackMatch;
+              }
+            }
+            const maVv = matchResult.maVV || '';
+            const confidenceScore = matchResult.bestMatch ? matchResult.confidenceScore : 0;
+            const matchStatus = matchResult.bestMatch ? matchResult.status : 'KHONG_MATCH';
+            const sanPhamImport = matchResult.bestMatch?.tenSanPham || '';
+            const tkDoanhThu = matchResult.bestMatch?.tkDoanhThu || '';
+
+            // 6. Số lượng, Đơn giá, CK & Thành tiền sau CK
+            const soLuong = parseNumber(soLuongRaw) || 0;
+            const donGia = parseNumber(donGiaRaw) || 0;
+            let chietKhau = parseNumber(chietKhauRaw) || 0;
+            if ((chietKhau > 0 && chietKhau <= 1) || String(chietKhauRaw).includes('%')) {
+              if (chietKhau > 0 && chietKhau <= 1) {
+                chietKhau = Math.round(chietKhau * 100);
+              }
+            }
+
+            // Ưu tiên thành tiền từ normalized (nguồn)
+            let thanhTienSauCk = normalized.thanhTienSauCk !== undefined 
+              ? normalized.thanhTienSauCk 
+              : (parseNumber(getFieldValue(rawRow, 'thanhTienSauCk', ['Thành tiền sau chiết khấu (VNĐ)', 'Thành tiền sau chiết khấu', 'Thành tiền'])) || (soLuong * donGia * (1 - chietKhau / 100)));
+
+            // 7. Thuế suất & Giá trị vv VAT (Áp dụng Unified Money/Tax Contract)
+            let thueSuat = config.taxRate;
+            if (sheetWideTaxRate !== null) {
+              thueSuat = sheetWideTaxRate;
+            } else if (matchResult.bestMatch && matchResult.bestMatch.thueSuat !== undefined && matchResult.bestMatch.thueSuat !== '') {
+              thueSuat = parseNumber(matchResult.bestMatch.thueSuat);
+            } else {
+              const rawRowThueSuat = getCellValue(rawRow, 'Thuế suất', 'Thue suat', 'VAT', 'Tỷ lệ VAT').trim();
+              if (rawRowThueSuat) {
+                thueSuat = parseNumber(rawRowThueSuat);
+              }
+            }
+
+            const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
+            const thueSuatVal = thueSuat > 1 ? thueSuat : thueSuat * 100;
+            
+            // Công thức thuế thống nhất: dựa trực tiếp trên thanhTienSauCk
+            const giaTriCuaVvVat = Math.round(thanhTienSauCk * (1 + taxRateMultiplier));
+
+            const tyLeCk = chietKhau;
+
+            // Chuyên trang — Ưu tiên exception rules, sau đó đến normalized.chuyenTrang
+            let exceptionText = applyExceptionRules(textToLookup, config.exceptionRules);
+            const chuyenTrang = exceptionText || normalized.chuyenTrang || noiDungQuangCao || '';
+
+            // Ghi chú chi tiết idempotent
+            const ghiChuChiTiet = soHt ? buildGhiChuChiTietIdempotent(soHt, separator, suffix) : '';
+
+            allMappedRows.push({
+              id: `bk_row_${globalRowIndex++}_${Date.now()}`,
+              sttOriginal: sttCol || String(rowIndex + 1),
+              maBooking,
+              soHt,
+              nhan,
+              noiDungQuangCao,
+              chiTiet,
+              lichDang,
+              donViTinh,
+              soLuong,
+              donGia,
+              chietKhauRaw: chietKhauRaw,
+              thanhTienSauCk,
+              ghiChuCol,
+
+              maHopDong,
+              tenHopDong,
+              bangKe: maBooking,
+              existsInFast,
+              fastStatus,
+              maKhach: fastMaKhach || '',
+              boPhanThucHien: fastBoPhanThucHien || '',
+              fastGhiChu: fastGhiChu || '',
+
+              ngayBatDau,
+              ngayKetThuc,
+              ngayHopDong,
+
+              maVv,
+              confidenceScore,
+              matchStatus,
+              sanPhamImport,
+              tkDoanhThu,
+              thueSuat: thueSuatVal,
+              giaTriCuaVvVat,
+              tyLeCk,
+              chuyenTrang,
+              ghiChuChiTiet,
+              status: 1, // Bảng kê Status = 1
+
+              __sourceFile: fileItem.fileName,
+              __templateId: fileTemplateId,
+
+              ngayHd1: '',
+              ngayHd2: '',
+              ngayHd3: '',
+              ngayHd4: '',
+              ngayHd5: '',
+              ngayHd6: '',
+              tienHd1: '',
+              tienHd2: '',
+              tienHd3: '',
+              tienHd4: '',
+              tienHd5: '',
+              tienHd6: '',
+            });
           }
         }
 
-        const mapped = filteredRowsForTable.map((row, index) => {
-      // 1. Raw inputs extracts
-      const sttCol = getFieldValue(row, 'stt', ['STT', 'stt', 'No']).trim();
-      const maBooking = getRawCellValue(row, 1) || getFieldValue(row, 'maBooking', ['Mã booking', 'Ma booking', 'Booking']).trim();
-      const soHt = getFieldValue(row, 'soHt', ['Số HT', 'So HT', 'HT', 'Hệ thống']).trim();
-      const nhan = getFieldValue(row, 'nhan', ['Nhãn', 'Nhan', 'Brand', 'Thương hiệu']).trim();
-      const noiDungQuangCao = getFieldValue(row, 'noiDungQuangCao', ['Nội dung quảng cáo', 'Noi dung quang cao', 'Nội dung', 'Diễn giải']).trim();
-      const chiTiet = getFieldValue(row, 'chiTiet', ['Chi tiết', 'Chi tiet', 'Chi tiết chạy']).trim();
-      
-      // Lấy lịch đăng từ cấu hình từ khóa, nếu chưa có thì fallback về cột tự nhận diện qua 3 dòng dữ liệu
-      let lichDang = getFieldValue(row, 'lichDang', ['Lịch đăng', 'Lich dang', 'Lịch chạy', 'Lich chay', 'Thời gian chạy', 'Thoi gian chay', 'Thời gian', 'Thoi gian']).trim();
-      if (!lichDang && autoDetectedLichDangKey && row[autoDetectedLichDangKey] !== undefined) {
-        lichDang = String(row[autoDetectedLichDangKey]).trim();
-      }
-      const donViTinh = getFieldValue(row, 'donViTinh', ['Đơn vị tính', 'Don vi tinh', 'ĐVT', 'DVT']).trim();
-      const soLuongRaw = getFieldValue(row, 'soLuong', ['Số lượng', 'So luong', 'Qty']).trim();
-      const donGiaRaw = getFieldValue(row, 'donGia', ['Đơn giá', 'Don gia', 'Price']).trim();
-      const chietKhauRaw = getFieldValue(row, 'chietKhau', ['Chiết khấu', 'Chiet khau', 'CK']).trim();
-      const thanhTienSauCkRaw = getFieldValue(row, 'thanhTienSauCk', ['Thành tiền sau chiết khấu (VNĐ)', 'Thành tiền sau chiết khấu', 'Thanh tien sau chiet khau', 'Thành tiền thực chạy (có VAT)', 'Thành tiền', 'Thanh tien']).trim();
-      const ghiChuCol = getFieldValue(row, 'ghiChu', ['Ghi chú', 'Ghi chu', 'Note']).trim();
-
-      // 2. Local config overrides
-      const suffix = config.contractSuffix || 'AD';
-      const separator = config.contractNameSeparator !== undefined ? config.contractNameSeparator : '/';
-      
-      const maHopDong = maBooking ? `${maBooking}${suffix}` : '';
-      const tenHopDong = maBooking ? `${maBooking}${separator}${suffix}` : '';
-
-      // 3. Fast mapping lookup using computed contract values
-      let existsInFast = false;
-      let fastStatus = '';
-      let fastMaKhach = '';
-      let fastBoPhanThucHien = '';
-      let fastGhiChu = '';
-
-      if (sheetFast) {
-          const match = lookupFastContractByBooking(fastLookupMap, maBooking);
-          if (match) {
-            existsInFast = true;
-            fastStatus = match.fastStatus;
-            fastMaKhach = match.fastMaKhach;
-            fastBoPhanThucHien = match.fastBoPhanThucHien;
-            fastGhiChu = match.fastGhiChu;
-          }
-        }
-
-      // 4. Booking parsing dates
-      const parsedDateRange = parsePostingDateRange(lichDang);
-      
-      const formatDateDayLocal = (d: Date | null): string => {
-        if (!d) return '';
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear();
-        return `${day}/${month}/${year}`;
-      };
-
-      const ngayBatDau = formatDateDayLocal(parsedDateRange.startDate);
-      const ngayKetThuc = formatDateDayLocal(parsedDateRange.endDate);
-
-      // "Ngày hợp đồng = lấy từ 4 ký tự cuối của Mã booking dạng MMyy, trả về 01/MM/yyyy."
-      const parsedContractDate = parseContractDateFromBooking(maBooking);
-      const ngayHopDong = parsedContractDate.text || '';
-
-      // 5. Product lookup via fuzzy matcher
-      const matchResult = keywordMatch(noiDungQuangCao, preNormalizedProducts);
-      const maVv = matchResult.maVV || '';
-      const confidenceScore = matchResult.bestMatch ? matchResult.confidenceScore : 0;
-      const matchStatus = matchResult.bestMatch ? matchResult.status : 'KHONG_MATCH';
-      const sanPhamImport = matchResult.bestMatch?.tenSanPham || '';
-      const tkDoanhThu = matchResult.bestMatch?.tkDoanhThu || '';
-
-      // 6. Numbers format
-      const soLuong = parseNumber(soLuongRaw) || 0;
-      const donGia = parseNumber(donGiaRaw) || 0;
-      let chietKhau = parseNumber(chietKhauRaw) || 0;
-      // Nếu là số thập phân <= 1 (VD: 0.18 -> 18%, 1 -> 100%) hoặc chuỗi thô chứa '%'
-      if ((chietKhau > 0 && chietKhau <= 1) || String(chietKhauRaw).includes('%')) {
-        if (chietKhau > 0 && chietKhau <= 1) {
-          chietKhau = Math.round(chietKhau * 100);
-        }
-      }
-      const thanhTienSauCk = parseNumber(thanhTienSauCkRaw) || (soLuong * donGia * (1 - chietKhau / 100));
-
-      // 7. Tax rate parsing - "Thuế suất = lấy từ dòng VAT trong bảng kê nếu có, tách số và bỏ ký hiệu %."
-      let thueSuat = config.taxRate;
-      
-      if (sheetWideTaxRate !== null) {
-        thueSuat = sheetWideTaxRate;
-      } else if (matchResult.bestMatch && matchResult.bestMatch.thueSuat !== undefined && matchResult.bestMatch.thueSuat !== '') {
-        thueSuat = parseNumber(matchResult.bestMatch.thueSuat);
-      } else {
-        const rawRowThueSuat = getCellValue(row, 'Thuế suất', 'Thue suat', 'VAT', 'Tỷ lệ VAT').trim();
-        if (rawRowThueSuat) {
-          thueSuat = parseNumber(rawRowThueSuat);
-        }
-      }
-
-      const taxRateMultiplier = thueSuat > 1 ? thueSuat / 100 : thueSuat;
-      const thueSuatVal = thueSuat > 1 ? thueSuat : thueSuat * 100;
-      const giaTriCuaVvVat = Math.round(soLuong * donGia * (1 - chietKhau / 100) * (1 + taxRateMultiplier));
-
-      const tyLeCk = chietKhau;
-
-      // Chuyên trang — ƯU TIÊN rule ngoại lệ trước, xử lý thông thường sau
-      let exceptionText = applyExceptionRules(noiDungQuangCao, config.exceptionRules);
-      const chuyenTrang = exceptionText || noiDungQuangCao || '';
-
-      // "Ghi chú chi tiết = Số HT + contractNameSeparator + contractSuffix"
-      const ghiChuChiTiet = soHt ? `${soHt}${separator}${suffix}` : '';
-
-      return {
-        id: `bk_row_${index}_${Date.now()}`,
-        sttOriginal: sttCol || String(index + 1),
-        maBooking,
-        soHt,
-        nhan,
-        noiDungQuangCao,
-        chiTiet,
-        lichDang,
-        donViTinh,
-        soLuong,
-        donGia,
-        chietKhauRaw: chietKhauRaw,
-        thanhTienSauCk,
-        ghiChuCol,
-
-        maHopDong,
-        tenHopDong,
-        bangKe: maBooking,
-        existsInFast,
-        fastStatus,
-        maKhach: fastMaKhach || '',
-        boPhanThucHien: fastBoPhanThucHien || '',
-        fastGhiChu: fastGhiChu || '',
-
-        ngayBatDau,
-        ngayKetThuc,
-        ngayHopDong,
-
-        maVv,
-        confidenceScore,
-        matchStatus,
-        sanPhamImport,
-        tkDoanhThu,
-        thueSuat: thueSuatVal,
-        giaTriCuaVvVat,
-        tyLeCk,
-        chuyenTrang,
-        ghiChuChiTiet,
-        status: 1, // Bảng kê Status = 1
-
-        ngayHd1: '',
-        ngayHd2: '',
-        ngayHd3: '',
-        ngayHd4: '',
-        ngayHd5: '',
-        ngayHd6: '',
-        tienHd1: '',
-        tienHd2: '',
-        tienHd3: '',
-        tienHd4: '',
-        tienHd5: '',
-        tienHd6: '',
-      };
-    });
-
-        setProcessedRows(mapped);
+        setProcessedRows(allMappedRows);
         setCurrentPage(1);
         writeActionLogToSheet(
           'Xử lý bảng kê',
-          `Xử lý thành công ${mapped.length} dòng dữ liệu.`
+          `Xử lý thành công ${allMappedRows.length} dòng dữ liệu từ ${fileBangKeList.length} file.`
         );
       } catch (err: any) {
         setErrorMessage(err?.message || 'Có lỗi xảy ra khi xử lý dữ liệu.');
@@ -664,6 +719,7 @@ export default function BangKeView({
       }
     }, 0);
   };
+
 
   // Autocomplete change side effects
   const handleUpdateField = (rowId: string, field: string, value: any) => {
@@ -693,7 +749,7 @@ export default function BangKeView({
           newRow.matchStatus = 'OK';
           
           const multiplier = parsedThue > 1 ? parsedThue / 100 : parsedThue;
-          newRow.giaTriCuaVvVat = Math.round(newRow.thanhTienSauCk * multiplier);
+          newRow.giaTriCuaVvVat = Math.round(newRow.thanhTienSauCk * (1 + multiplier));
         }
       }
 
@@ -712,7 +768,7 @@ export default function BangKeView({
           newRow.matchStatus = 'OK';
 
           const multiplier = parsedThue > 1 ? parsedThue / 100 : parsedThue;
-          newRow.giaTriCuaVvVat = Math.round(newRow.thanhTienSauCk * multiplier);
+          newRow.giaTriCuaVvVat = Math.round(newRow.thanhTienSauCk * (1 + multiplier));
         }
       }
 
@@ -720,14 +776,14 @@ export default function BangKeView({
         const parsedThue = parseNumber(value);
         newRow.thueSuat = parsedThue;
         const multiplier = parsedThue > 1 ? parsedThue / 100 : parsedThue;
-        newRow.giaTriCuaVvVat = Math.round(newRow.thanhTienSauCk * multiplier);
+        newRow.giaTriCuaVvVat = Math.round(newRow.thanhTienSauCk * (1 + multiplier));
       }
 
       if (field === 'thanhTienSauCk') {
         const parsedVal = parseNumber(value);
         newRow.thanhTienSauCk = parsedVal;
         const multiplier = newRow.thueSuat > 1 ? newRow.thueSuat / 100 : newRow.thueSuat;
-        newRow.giaTriCuaVvVat = Math.round(parsedVal * multiplier);
+        newRow.giaTriCuaVvVat = Math.round(parsedVal * (1 + multiplier));
       }
 
       if (field === 'lichDang') {
@@ -1112,19 +1168,45 @@ export default function BangKeView({
           {fileBangKeList.length > 0 && (
             <div className="space-y-1.5">
               <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">File đã tải lên ({fileBangKeList.length})</div>
-              <div className="space-y-1">
-                {fileBangKeList.map((file, index) => (
-                  <div key={`${file.fileName}_${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] font-semibold text-slate-700" title={file.fileName}>
-                        {file.fileName} <span className="text-slate-400 font-mono">({file.sheets[0]?.rows.length || 0} dòng)</span>
+              <div className="space-y-1.5">
+                {fileBangKeList.map((file, index) => {
+                  const currentTemplate = file.templateId || 'STANDARD';
+                  const allTemplates = getAllBangKeTemplates();
+                  const fileKey = file.id || `${file.fileName}_${index}`;
+                  return (
+                    <div key={fileKey} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[11px] font-semibold text-slate-700" title={file.fileName}>
+                          {file.fileName} <span className="text-slate-400 font-mono">({file.sheets[0]?.rows.length || 0} dòng)</span>
+                        </div>
+                      </div>
+
+                      {/* Dropdown chọn mẫu độc lập cho từng file */}
+                      <div className="flex items-center space-x-1.5 shrink-0">
+                        <select
+                          value={currentTemplate}
+                          onChange={(e) => updateFileTemplate(file.id || fileKey, e.target.value as BangKeTemplateId)}
+                          title="Chọn mẫu bảng kê áp dụng riêng cho file này"
+                          className="text-[11px] font-medium bg-white border border-slate-300 rounded px-2 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
+                        >
+                          {allTemplates.map(tmpl => (
+                            <option key={tmpl.id} value={tmpl.id}>
+                              {tmpl.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button 
+                          type="button" 
+                          onClick={() => removeUploadedFile(index, setFileBangKeList)} 
+                          title="Xóa file này khỏi danh sách xử lý" 
+                          className="h-6 w-6 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
-                    <button type="button" onClick={() => removeUploadedFile(index, setFileBangKeList)} title="Xóa file này khỏi danh sách xử lý" className="h-6 w-6 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

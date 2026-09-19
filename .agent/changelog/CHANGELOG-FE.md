@@ -3,6 +3,28 @@
 > Phạm vi: Frontend, UI, UX, state client, routing, hiển thị, validation phía client
 > Format: [Conventional Commits](https://www.conventionalcommits.org/)
 > Ngôn ngữ: Tiếng Việt
+## 2026-09-19
+
+### feat(bangke): nhận diện tự động đa mẫu bảng kê (MMS, SUN, WPP) & chọn mẫu độc lập từng file
+- Xây dựng kiến trúc `BangKeTemplateRegistry` và bộ nhận diện 3 lớp (Title/Bên A, Headers, Data sampling) tự động xác định mẫu bảng kê cho từng file tải lên.
+- Cung cấp giao diện dropdown `<select>` chọn template độc lập cho từng file trong danh sách `File đã tải lên` với ID ổn định, cho phép kế toán viên linh hoạt đổi mẫu thủ công khi cần.
+- Áp dụng hợp đồng tính tiền và thuế thống nhất (`Unified Money & Tax Contract`): ưu tiên tuyệt đối `thanhTienSauCk` nguồn và tính `giaTriCuaVvVat` trực tiếp trên số tiền nguồn.
+- Chuẩn hóa lịch đăng thông minh xử lý cả runtime `Date` object lẫn số serial Excel (`46161`), format chuẩn `DD/MM/YYYY`.
+- Xử lý triệt để tính idempotent của hậu tố `/AD` trong `Ghi chú chi tiết` và `maBooking`, không bao giờ bị nhân đôi `/AD/AD`.
+- Files:
+  - [bangKeTemplates.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/bangKeTemplates.ts)
+  - [businessLogic.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/businessLogic.ts)
+  - [BangKeView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/BangKeView.tsx)
+  - [types.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/types.ts)
+  - [excel.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/excel.ts)
+
+### fix(bangke): sửa lỗi tính thuế suất/VAT, tỷ lệ chiết khấu WPP và tra cứu vụ việc MMS
+- Sửa bộ quét thuế suất toàn sheet: chỉ nhận diện số trong dải `[0, 100]` và bỏ qua các dòng tổng tiền, ngăn chặn lỗi tính thuế VAT phóng đại hàng chục nghìn tỷ.
+- Sửa trích xuất chiết khấu ưu đãi mẫu WPP: loại trừ các cột thành tiền ưu đãi để không bị dán số tiền vào tỷ lệ chiết khấu.
+- Sửa tra cứu vụ việc cho mẫu MMS: ưu tiên cột `Nội dung quảng cáo` thay vì dùng cột `Nhãn: SAMSUNG`, đồng thời bổ sung fallback tự động nhận diện theo nội dung chi tiết.
+- Files:
+  - [BangKeView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/BangKeView.tsx)
+  - [bangKeTemplates.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/bangKeTemplates.ts)
 
 ## 2026-07-30
 

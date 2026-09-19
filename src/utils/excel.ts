@@ -106,6 +106,84 @@ function detectHeaderRowIndex(rawArray: any[][]): number {
 }
 
 /**
+ * Hàm thuần tách biệt để parse một Workbook đã load (dùng chung cho cả Browser và Node/Test runner).
+ */
+export function parseExcelWorkbook(workbook: XLSX.WorkBook, fileName: string = 'workbook.xlsx', fileSize: number = 0): UploadedFileData {
+  let targetSheetName = workbook.SheetNames[0];
+  if (workbook.Workbook && workbook.Workbook.Sheets) {
+    for (let i = 0; i < workbook.SheetNames.length; i++) {
+      const sheetMeta = workbook.Workbook.Sheets[i] as any;
+      const isHidden = sheetMeta && (sheetMeta.Hidden === 1 || sheetMeta.Hidden === 2 || sheetMeta.state === 'hidden' || sheetMeta.state === 'veryHidden');
+      if (!isHidden) {
+        targetSheetName = workbook.SheetNames[i];
+        break;
+      }
+    }
+  }
+
+  const sheets: ExcelSheetData[] = [];
+  const worksheet = workbook.Sheets[targetSheetName];
+  if (worksheet) {
+    // Bước 1: Đọc thô toàn bộ sheet dạng 2D array (không dùng dòng nào làm header)
+    const rawArray = XLSX.utils.sheet_to_json<any[]>(worksheet, {
+      header: 1,
+      defval: '',
+    });
+
+    // Bước 2: Tự động phát hiện dòng tiêu đề thật
+    const headerRowIndex = detectHeaderRowIndex(rawArray);
+    // Nếu không phát hiện được (headerRowIndex === -1), dùng dòng 0 (backward-compatible)
+    const effectiveHeaderRow = headerRowIndex >= 0 ? headerRowIndex : 0;
+
+    // Bước 3: Parse dữ liệu từ đúng dòng header trở đi
+    const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, {
+      defval: '',
+      range: effectiveHeaderRow,
+    });
+
+    const dataRows = rawArray.slice(effectiveHeaderRow + 1);
+    rawRows.forEach((row, rowIndex) => {
+      row.__cells = dataRows[rowIndex] || [];
+    });
+
+    let headers: string[] = [];
+    if (rawRows.length > 0) {
+      const headerSet = new Set<string>();
+      rawRows.forEach((row) => {
+        Object.keys(row).forEach((key) => {
+          if (!key.startsWith('__')) headerSet.add(key);
+        });
+      });
+      headers = Array.from(headerSet);
+    }
+
+    sheets.push({
+      sheetName: targetSheetName,
+      headers,
+      rows: rawRows,
+      headerRowIndex: effectiveHeaderRow,
+      rawArray,
+      merges: worksheet['!merges'] || [],
+    });
+  }
+
+  if (sheets.length === 0) {
+    throw new Error('File Excel rỗng hoặc không có sheet hợp lệ.');
+  }
+
+  return {
+    fileName,
+    fileSize,
+    sheets,
+    uploadedAt: new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }),
+  };
+}
+
+/**
  * Parses an Excel File object into structured JSON data.
  * Tự động nhận diện dòng tiêu đề thật (dynamic header detection).
  * Nếu không phát hiện được header, fallback về dòng 0 (backward-compatible).
@@ -127,80 +205,9 @@ export async function parseExcelFile(file: File): Promise<UploadedFileData> {
           cellNF: false,
           cellText: true,
         });
-        let targetSheetName = workbook.SheetNames[0];
-        if (workbook.Workbook && workbook.Workbook.Sheets) {
-          for (let i = 0; i < workbook.SheetNames.length; i++) {
-            const sheetMeta = workbook.Workbook.Sheets[i] as any;
-            const isHidden = sheetMeta && (sheetMeta.Hidden === 1 || sheetMeta.Hidden === 2 || sheetMeta.state === 'hidden' || sheetMeta.state === 'veryHidden');
-            if (!isHidden) {
-              targetSheetName = workbook.SheetNames[i];
-              break;
-            }
-          }
-        }
 
-        const sheets: ExcelSheetData[] = [];
-        const worksheet = workbook.Sheets[targetSheetName];
-        if (worksheet) {
-          // Bước 1: Đọc thô toàn bộ sheet dạng 2D array (không dùng dòng nào làm header)
-          const rawArray = XLSX.utils.sheet_to_json<any[]>(worksheet, {
-            header: 1,
-            defval: '',
-          });
-
-          // Bước 2: Tự động phát hiện dòng tiêu đề thật
-          const headerRowIndex = detectHeaderRowIndex(rawArray);
-          // Nếu không phát hiện được (headerRowIndex === -1), dùng dòng 0 (backward-compatible)
-          const effectiveHeaderRow = headerRowIndex >= 0 ? headerRowIndex : 0;
-
-          // Bước 3: Parse dữ liệu từ đúng dòng header trở đi
-          // range option: bỏ qua các dòng trước header
-          const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, {
-            defval: '',
-            range: effectiveHeaderRow,
-          });
-
-          const dataRows = rawArray.slice(effectiveHeaderRow + 1);
-          rawRows.forEach((row, rowIndex) => {
-            row.__cells = dataRows[rowIndex] || [];
-          });
-
-          let headers: string[] = [];
-          if (rawRows.length > 0) {
-            const headerSet = new Set<string>();
-            rawRows.forEach((row) => {
-              Object.keys(row).forEach((key) => {
-                if (!key.startsWith('__')) headerSet.add(key);
-              });
-            });
-            headers = Array.from(headerSet);
-          }
-
-          sheets.push({
-            sheetName: targetSheetName,
-            headers,
-            rows: rawRows,
-            headerRowIndex: effectiveHeaderRow,
-            rawArray,
-            merges: worksheet['!merges'] || [],
-          });
-        }
-
-        if (sheets.length === 0) {
-          throw new Error('File Excel rỗng hoặc không có sheet hợp lệ.');
-        }
-
-
-        resolve({
-          fileName: file.name,
-          fileSize: file.size,
-          sheets,
-          uploadedAt: new Date().toLocaleTimeString('vi-VN', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          }),
-        });
+        const parsedData = parseExcelWorkbook(workbook, file.name, file.size);
+        resolve(parsedData);
       } catch (error: any) {
         reject(new Error(error?.message || 'Định dạng file Excel không hợp lệ hoặc bị lỗi.'));
       }

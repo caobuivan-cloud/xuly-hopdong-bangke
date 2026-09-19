@@ -476,3 +476,173 @@ export function parseContractDateFromBooking(maBooking: string): {
 
   return result;
 }
+
+/**
+ * Helper trích xuất ký tự trong ngoặc đơn cuối chuỗi (dùng cho SUN, WPP để lấy 14 ký tự Số HT).
+ * Ví dụ: "Dịch vụ quảng cáo... (12345678901234)" -> "12345678901234"
+ */
+export function extractParenthesesTail(val: any, targetLength: number = 14): string {
+  if (val === undefined || val === null) return '';
+  const text = String(val).trim();
+  const match = text.match(/\(([^)]+)\)\s*$/);
+  if (match && match[1]) {
+    const inside = match[1].trim();
+    if (targetLength > 0 && inside.length > targetLength) {
+      return inside.slice(-targetLength);
+    }
+    return inside;
+  }
+  return text;
+}
+
+/**
+ * Tách dòng và lấy nội dung sau tiền tố "Loại quảng cáo :" (mẫu SUN).
+ * Hỗ trợ các biến thể hoa thường, có/không dấu cách trước sau dấu hai chấm.
+ */
+export function extractSunContentDetail(rawContent: any): string {
+  if (!rawContent) return '';
+  const text = String(rawContent);
+  const lines = text.split(/[\r\n]+/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const match = trimmed.match(/^loại\s*quảng\s*cáo\s*:\s*(.+)$/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+  return lines[0]?.trim() || text.trim();
+}
+
+/**
+ * Chuyển đổi an toàn giá trị ngày nhận từ parser (Date object, Excel serial number, hoặc string)
+ * sang chuỗi ngày chuẩn DD/MM/YYYY.
+ */
+export function formatRawDateValue(dateVal: any): string {
+  if (dateVal === undefined || dateVal === null || dateVal === '') return '';
+
+  if (dateVal instanceof Date) {
+    if (isNaN(dateVal.getTime())) return '';
+    const day = String(dateVal.getDate()).padStart(2, '0');
+    const month = String(dateVal.getMonth() + 1).padStart(2, '0');
+    const year = dateVal.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  if (typeof dateVal === 'number') {
+    // Excel serial number (ví dụ 46161)
+    if (dateVal > 10000 && dateVal < 100000) {
+      const utcDays = Math.floor(dateVal - 25569);
+      const utcValue = utcDays * 86400;
+      const dateInfo = new Date(utcValue * 1000);
+      const day = String(dateInfo.getUTCDate()).padStart(2, '0');
+      const month = String(dateInfo.getUTCMonth() + 1).padStart(2, '0');
+      const year = dateInfo.getUTCFullYear();
+      return `${day}/${month}/${year}`;
+    }
+    return String(dateVal);
+  }
+
+  const str = String(dateVal).trim();
+  const dMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (dMatch) {
+    const day = String(dMatch[1]).padStart(2, '0');
+    const month = String(dMatch[2]).padStart(2, '0');
+    let year = Number(dMatch[3]);
+    if (year < 100) year += 2000;
+    return `${day}/${month}/${year}`;
+  }
+
+  return str;
+}
+
+/**
+ * Chuẩn hóa mã booking, loại bỏ hậu tố /AD thừa nếu có để làm key tra cứu gốc.
+ */
+export function cleanBookingCode(rawBooking: any): string {
+  if (!rawBooking) return '';
+  const text = String(rawBooking).trim();
+  return text.replace(/\/AD$/i, '').trim();
+}
+
+/**
+ * Xây dựng Ghi chú chi tiết an toàn, không nhân đôi /AD/AD nếu soHt đã kết thúc bằng /AD.
+ */
+export function buildGhiChuChiTietIdempotent(soHt: any, separator: string = '-', suffix: string = '/AD'): string {
+  const cleanHt = String(soHt ?? '').trim();
+  if (!cleanHt) return '';
+  if (cleanHt.toLowerCase().endsWith(suffix.toLowerCase())) {
+    return cleanHt;
+  }
+  return `${cleanHt}${suffix}`;
+}
+
+/**
+ * Helper parse số có sentinel:
+ * - Trả về null khi giá trị rỗng, undefined, hoặc text lỗi không phải số.
+ * - Giữ nguyên 0 nếu giá trị thực sự là 0.
+ */
+export function parseOptionalNumber(value: any): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number') {
+    return isNaN(value) ? null : value;
+  }
+  const str = String(value).trim();
+  if (str === '') return null;
+  
+  // Xóa đơn vị tiền tệ và khoảng trắng: đ, VND, VNĐ, %
+  let cleanStr = str.replace(/[đVNĐ%]/gi, '').trim();
+  if (cleanStr === '') return null;
+
+  // Xử lý dấu phân cách hàng nghìn và thập phân:
+  // Nếu có nhiều dấu chấm (ví dụ: 15.500.000) -> đây là phân cách hàng nghìn tiếng Việt
+  if ((cleanStr.match(/\./g) || []).length > 1) {
+    cleanStr = cleanStr.replace(/\./g, '');
+  } else if ((cleanStr.match(/,/g) || []).length > 1) {
+    // Nếu có nhiều dấu phẩy (ví dụ: 15,500,000) -> phân cách hàng nghìn kiểu US
+    cleanStr = cleanStr.replace(/,/g, '');
+  } else if (cleanStr.includes('.') && cleanStr.includes(',')) {
+    // Cả hai: xác định cái nào là hàng nghìn
+    if (cleanStr.indexOf('.') < cleanStr.indexOf(',')) {
+      // 15.500,00 -> chấm là nghìn, phẩy là thập phân
+      cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
+    } else {
+      // 15,500.00 -> phẩy là nghìn
+      cleanStr = cleanStr.replace(/,/g, '');
+    }
+  } else {
+    // Chỉ có 1 dấu chấm hoặc 1 dấu phẩy
+    // Nếu dấu chấm theo sau bởi đúng 3 chữ số cuối (ví dụ 15.500) -> coi là hàng nghìn
+    if (/\.\d{3}$/.test(cleanStr)) {
+      cleanStr = cleanStr.replace(/\./g, '');
+    } else {
+      // Chuẩn hóa dấu phẩy thành dấu chấm nếu là phân cách thập phân
+      cleanStr = cleanStr.replace(/,/g, '');
+    }
+  }
+
+  // Xóa các khoảng trắng còn lại
+  cleanStr = cleanStr.replace(/\s+/g, '');
+  if (cleanStr === '') return null;
+  const num = Number(cleanStr);
+  return isNaN(num) ? null : num;
+}
+
+/**
+ * Chuẩn hóa và tính tổng chiết khấu cho WPP/MMS.
+ */
+export function parseAndSumDiscounts(ckRaw: any, ckuDaiRaw: any): number {
+  const parsePercent = (val: any): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') {
+      // Nếu là số thập phân như 0.15 thì hiểu là 15%
+      return val <= 1 && val > 0 ? val * 100 : val;
+    }
+    const str = String(val).trim().replace(/%/g, '').replace(/,/g, '.');
+    const num = parseFloat(str);
+    return isNaN(num) ? 0 : num;
+  };
+
+  const ck1 = parsePercent(ckRaw);
+  const ck2 = parsePercent(ckuDaiRaw);
+  return ck1 + ck2;
+}

@@ -19,11 +19,39 @@ export interface ExcelSheetData {
   merges?: any[];
 }
 
+export type BangKeTemplateId = 'STANDARD' | 'MMS' | 'SUN' | 'WPP';
+
+export interface BangKeTemplateConfig {
+  id: BangKeTemplateId;
+  name: string;
+  description: string;
+  badgeColor?: string;
+}
+
+export interface NormalizedBangKeRow {
+  stt?: number | string;
+  maBooking: string;
+  rawBooking?: string;
+  lichDang?: string;
+  soHt: string;
+  rawSoHt?: string;
+  chuyenTrang: string;
+  lookupContent: string;
+  noiDung?: string;
+  soLuong?: number;
+  donGia?: number;
+  chietKhau?: number;
+  thanhTienSauCk?: number;
+  [key: string]: any;
+}
+
 export interface UploadedFileData {
+  id?: string;
   fileName: string;
   fileSize: number;
   sheets: ExcelSheetData[];
   uploadedAt: string;
+  templateId?: BangKeTemplateId;
 }
 
 export interface ColumnMapping {
