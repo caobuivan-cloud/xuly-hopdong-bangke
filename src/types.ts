@@ -37,12 +37,15 @@ export interface ExceptionRule {
   outputValue: string;
 }
 
+export type HeaderAliasesBangKe = Record<string, string[]>;
+
 export interface ContractSettings {
   taxRate: number;
   agencyFeeRate: number;
   requiredHeadersLuanChuyen: string[];
   requiredHeadersHopDongMoi: string[];
   requiredHeadersBangKe: string[];
+  headerAliasesBangKe?: HeaderAliasesBangKe;
   contractSuffix: string;
   contractNameSeparator: string;
   exceptionRules: ExceptionRule[];

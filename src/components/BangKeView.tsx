@@ -23,11 +23,15 @@ import {
 } from '../utils/businessLogic';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
 import ConfirmModal from './ConfirmModal';
+import BangKeHeaderMappingModal from './BangKeHeaderMappingModal';
+import { DEFAULT_HEADER_ALIASES_BANG_KE } from '../utils/businessLogic';
 
 interface BangKeViewProps {
   id?: string;
   config: ContractSettings;
   onHeaderActionsChange?: (actions: React.ReactNode | null) => void;
+  onSaveConfig?: (updated: ContractSettings) => void;
+  onManualPush?: (currentConfig: ContractSettings) => Promise<any>;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -85,12 +89,17 @@ export default function BangKeView({
   id = 'bang-ke-view',
   config,
   onHeaderActionsChange,
+  onSaveConfig,
+  onManualPush,
 }: BangKeViewProps) {
   // Master data lists
   const [customers, setCustomers] = useState<CustomerMaster[]>([]);
   const [departments, setDepartments] = useState<DepartmentMaster[]>([]);
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [loadingMaster, setLoadingMaster] = useState(true);
+
+  // Modal configuration for header mapping
+  const [showHeaderMappingModal, setShowHeaderMappingModal] = useState(false);
 
   // Files uploaded by user
   const [fileBangKeList, setFileBangKeList] = useState<UploadedFileData[]>([]);
@@ -224,7 +233,7 @@ export default function BangKeView({
     };
   }, []);
 
-  // Flex cell value helper
+  // Flex cell value helper with fallback
   const getCellValue = (row: any, ...candidates: string[]): string => {
     const keys = Object.keys(row);
     // Exact check
@@ -241,6 +250,19 @@ export default function BangKeView({
       }
     }
     return '';
+  };
+
+  // Dynamic header cell value extractor using configured aliases
+  const getFieldValue = (row: any, fieldKey: string, fallbackCandidates: string[] = []): string => {
+    const configuredAliases = config.headerAliasesBangKe?.[fieldKey];
+    const defaultAliases = DEFAULT_HEADER_ALIASES_BANG_KE[fieldKey] || [];
+    const candidates = Array.from(new Set([
+      ...(configuredAliases || []),
+      ...defaultAliases,
+      ...fallbackCandidates,
+    ])).filter(Boolean);
+
+    return getCellValue(row, ...candidates);
   };
 
   // Run business mapping logic on uploaded datasets
@@ -372,21 +394,60 @@ export default function BangKeView({
           filteredRowsForTable.push(row);
         }
 
+        // Auto Data Pattern Sampling (tối đa 3 dòng dữ liệu đầu tiên)
+        // Nhận diện tự động cột "Lịch chạy/đăng" khi tiêu đề cột không khớp bất kỳ từ khóa nào
+        let autoDetectedLichDangKey: string | null = null;
+        if (filteredRowsForTable.length > 0) {
+          const sampleRows = filteredRowsForTable.slice(0, 3);
+          const sampleKeys = Object.keys(filteredRowsForTable[0] || {});
+          
+          const isDatePatternValue = (val: any): boolean => {
+            if (!val) return false;
+            const s = String(val).trim();
+            return (
+              /^\d{1,2}\/\d{1,2}\/\d{2,4}\s*[-–~to|den]+\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
+              /^\d{1,2}\s*[-–~]\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
+              /^\d{1,2}\/\d{1,2}\s*[-–~]\s*\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(s) ||
+              /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)
+            );
+          };
+
+          for (const key of sampleKeys) {
+            if (key.startsWith('__EMPTY') || key.toLowerCase() === 'stt') continue;
+            let matchCount = 0;
+            for (const r of sampleRows) {
+              if (isDatePatternValue(r[key])) {
+                matchCount++;
+              }
+            }
+            // Nếu có ít nhất 1 dòng trong 3 dòng mẫu khớp định dạng ngày
+            if (matchCount >= 1) {
+              autoDetectedLichDangKey = key;
+              break;
+            }
+          }
+        }
+
         const mapped = filteredRowsForTable.map((row, index) => {
       // 1. Raw inputs extracts
-      const sttCol = getCellValue(row, 'STT', 'stt', 'No').trim();
-      const maBooking = getRawCellValue(row, 1);
-      const soHt = getCellValue(row, 'Số HT', 'So HT', 'HT', 'Hệ thống').trim();
-      const nhan = getCellValue(row, 'Nhãn', 'Nhan', 'Brand', 'Thương hiệu').trim();
-      const noiDungQuangCao = getCellValue(row, 'Nội dung quảng cáo', 'Noi dung quang cao', 'Nội dung', 'Diễn giải').trim();
-      const chiTiet = getCellValue(row, 'Chi tiết', 'Chi tiet', 'Chi tiết chạy').trim();
-      const lichDang = getCellValue(row, 'Lịch đăng', 'Lich dang', 'Lịch chạy', 'Lich chay', 'Thời gian').trim();
-      const donViTinh = getCellValue(row, 'Đơn vị tính', 'Don vi tinh', 'ĐVT', 'DVT').trim();
-      const soLuongRaw = getCellValue(row, 'Số lượng', 'So luong', 'Qty').trim();
-      const donGiaRaw = getCellValue(row, 'Đơn giá', 'Don gia', 'Price').trim();
-      const chietKhauRaw = getCellValue(row, 'Chiết khấu', 'Chiet khau', 'CK').trim();
-      const thanhTienSauCkRaw = getCellValue(row, 'Thành tiền sau chiết khấu (VNĐ)', 'Thành tiền sau chiết khấu', 'Thanh tien sau chiet khau', 'Thành tiền thực chạy (có VAT)', 'Thành tiền', 'Thanh tien').trim();
-      const ghiChuCol = getCellValue(row, 'Ghi chú', 'Ghi chu', 'Note').trim();
+      const sttCol = getFieldValue(row, 'stt', ['STT', 'stt', 'No']).trim();
+      const maBooking = getRawCellValue(row, 1) || getFieldValue(row, 'maBooking', ['Mã booking', 'Ma booking', 'Booking']).trim();
+      const soHt = getFieldValue(row, 'soHt', ['Số HT', 'So HT', 'HT', 'Hệ thống']).trim();
+      const nhan = getFieldValue(row, 'nhan', ['Nhãn', 'Nhan', 'Brand', 'Thương hiệu']).trim();
+      const noiDungQuangCao = getFieldValue(row, 'noiDungQuangCao', ['Nội dung quảng cáo', 'Noi dung quang cao', 'Nội dung', 'Diễn giải']).trim();
+      const chiTiet = getFieldValue(row, 'chiTiet', ['Chi tiết', 'Chi tiet', 'Chi tiết chạy']).trim();
+      
+      // Lấy lịch đăng từ cấu hình từ khóa, nếu chưa có thì fallback về cột tự nhận diện qua 3 dòng dữ liệu
+      let lichDang = getFieldValue(row, 'lichDang', ['Lịch đăng', 'Lich dang', 'Lịch chạy', 'Lich chay', 'Thời gian chạy', 'Thoi gian chay', 'Thời gian', 'Thoi gian']).trim();
+      if (!lichDang && autoDetectedLichDangKey && row[autoDetectedLichDangKey] !== undefined) {
+        lichDang = String(row[autoDetectedLichDangKey]).trim();
+      }
+      const donViTinh = getFieldValue(row, 'donViTinh', ['Đơn vị tính', 'Don vi tinh', 'ĐVT', 'DVT']).trim();
+      const soLuongRaw = getFieldValue(row, 'soLuong', ['Số lượng', 'So luong', 'Qty']).trim();
+      const donGiaRaw = getFieldValue(row, 'donGia', ['Đơn giá', 'Don gia', 'Price']).trim();
+      const chietKhauRaw = getFieldValue(row, 'chietKhau', ['Chiết khấu', 'Chiet khau', 'CK']).trim();
+      const thanhTienSauCkRaw = getFieldValue(row, 'thanhTienSauCk', ['Thành tiền sau chiết khấu (VNĐ)', 'Thành tiền sau chiết khấu', 'Thanh tien sau chiet khau', 'Thành tiền thực chạy (có VAT)', 'Thành tiền', 'Thanh tien']).trim();
+      const ghiChuCol = getFieldValue(row, 'ghiChu', ['Ghi chú', 'Ghi chu', 'Note']).trim();
 
       // 2. Local config overrides
       const suffix = config.contractSuffix || 'AD';
@@ -941,6 +1002,18 @@ export default function BangKeView({
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
             Hạch toán phân rã Bảng kê chi tiếp từ Ad-servers sang mã Vụ việc master, đồng bộ lookup thông tin Hợp đồng từ hệ thống Fast, parse khoảng ngày Lịch chạy tự do và xuất file kết quả.
           </p>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => setShowHeaderMappingModal(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
+            title="Tùy chỉnh từ khóa nhận diện tiêu đề cột trong bảng kê"
+          >
+            <Settings className="h-3.5 w-3.5 text-slate-400 group-hover:text-indigo-600" />
+            <span>Cài đặt nhận diện cột</span>
+          </button>
         </div>
       </div>
 
@@ -1666,6 +1739,18 @@ export default function BangKeView({
           setConfirmConfig(null);
         }}
         onCancel={() => setConfirmConfig(null)}
+      />
+
+      <BangKeHeaderMappingModal
+        isOpen={showHeaderMappingModal}
+        onClose={() => setShowHeaderMappingModal(false)}
+        config={config}
+        onSaveConfig={(updated) => {
+          if (onSaveConfig) {
+            onSaveConfig(updated);
+          }
+        }}
+        onManualPush={onManualPush}
       />
     </div>
   );

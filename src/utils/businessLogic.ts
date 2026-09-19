@@ -3,7 +3,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ExceptionRule, ProductMaster } from '../types';
+import { ExceptionRule, ProductMaster, HeaderAliasesBangKe } from '../types';
+
+export const DEFAULT_HEADER_ALIASES_BANG_KE: HeaderAliasesBangKe = {
+  stt: ['STT', 'stt', 'No'],
+  maBooking: ['Mã booking', 'Ma booking', 'Booking', 'Số booking'],
+  soHt: ['Số HT', 'So HT', 'HT', 'Hệ thống'],
+  nhan: ['Nhãn', 'Nhan', 'Brand', 'Thương hiệu'],
+  noiDungQuangCao: ['Nội dung quảng cáo', 'Noi dung quang cao', 'Nội dung', 'Diễn giải'],
+  chiTiet: ['Chi tiết', 'Chi tiet', 'Chi tiết chạy'],
+  lichDang: ['Lịch đăng', 'Lich dang', 'Lịch chạy', 'Lich chay', 'Thời gian chạy', 'Thoi gian chay', 'Thời gian', 'Thoi gian', 'Timeline'],
+  donViTinh: ['Đơn vị tính', 'Don vi tinh', 'ĐVT', 'DVT'],
+  soLuong: ['Số lượng', 'So luong', 'Qty'],
+  donGia: ['Đơn giá', 'Don gia', 'Price'],
+  chietKhau: ['Chiết khấu', 'Chiet khau', 'CK'],
+  thanhTienSauCk: ['Thành tiền sau chiết khấu (VNĐ)', 'Thành tiền sau chiết khấu', 'Thanh tien sau chiet khau', 'Thành tiền thực chạy (có VAT)', 'Thành tiền', 'Thanh tien'],
+  ghiChu: ['Ghi chú', 'Ghi chu', 'Note']
+};
 
 export interface FastContractLookupValue {
   fastStatus: string;

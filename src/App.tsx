@@ -43,6 +43,8 @@ import {
 } from './services/dbService';
 import { getCurrentUser, logoutUser, GoogleUser } from './services/authService';
 
+import { DEFAULT_HEADER_ALIASES_BANG_KE } from './utils/businessLogic';
+
 const DEFAULT_RULES = [
   { id: 'rule_1', keyword: 'ADX - Viết nội dung', outputValue: 'Mua gói quảng cáo ADX' },
   { id: 'rule_2', keyword: 'Native ads - Viết nội dung', outputValue: 'Mua gói quảng cáo Native ads' },
@@ -55,6 +57,7 @@ const DEFAULT_CONFIG: ContractSettings = {
   requiredHeadersLuanChuyen: ['Mã hợp đồng', 'Tên hợp đồng', 'Tên Khách hàng', 'Tên NVKD', 'Chuyên trang'],
   requiredHeadersHopDongMoi: ['Số HĐ', 'Tên sale', 'Tên khách hàng', 'Sản phẩm', 'Thành tiền'],
   requiredHeadersBangKe: ['STT', 'Mã booking', 'Số HT', 'Nội dung quảng cáo', 'Lịch đăng'],
+  headerAliasesBangKe: DEFAULT_HEADER_ALIASES_BANG_KE,
   contractSuffix: 'AD',
   contractNameSeparator: '/',
   exceptionRules: DEFAULT_RULES,
@@ -508,6 +511,8 @@ export default function App() {
               <BangKeView
                 config={config}
                 onHeaderActionsChange={setHeaderActions}
+                onSaveConfig={handleSaveConfig}
+                onManualPush={handleManualPush}
               />
             )}
           </div>
