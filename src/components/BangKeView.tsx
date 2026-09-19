@@ -304,10 +304,64 @@ export default function BangKeView({
           __normKeyword: normalizeText(p.keyword)
         }));
 
-        // Filter rows up to the "Tổng thành tiền" row by checking the STT column
-        const filteredRowsForTable: any[] = [];
+        // Unmerge & forward-fill data for vertical merges (except booking column)
         const merges = sheetBangKe.merges || [];
         const headerIndex = sheetBangKe.headerRowIndex ?? 0;
+        const rawHeaders = Array.isArray(sheetBangKe.rawArray?.[headerIndex]) 
+          ? sheetBangKe.rawArray[headerIndex] 
+          : (sheetBangKe.headers || []);
+
+        // Identify booking column indices to never forward-fill booking
+        const bookingColIndices = new Set<number>();
+        rawHeaders.forEach((h: any, colIdx: number) => {
+          const norm = normalizeText(h);
+          if (['ma booking', 'booking', 'so booking'].some(k => norm.includes(k))) {
+            bookingColIndices.add(colIdx);
+          }
+        });
+        bookingColIndices.add(1); // Standard Column B is Ma booking
+
+        // Clone rows to avoid direct mutation of sheet data while filling values
+        const preparedRows = sheetBangKe.rows.map(r => ({
+          ...r,
+          __cells: Array.isArray(r.__cells) ? [...r.__cells] : []
+        }));
+
+        merges.forEach((m: any) => {
+          // Check for vertical merge
+          if (m.e.r > m.s.r) {
+            for (let c = m.s.c; c <= m.e.c; c++) {
+              if (bookingColIndices.has(c)) continue; // Do NOT forward-fill booking code
+
+              const topRowIndex = m.s.r - (headerIndex + 1);
+              if (topRowIndex < 0 || topRowIndex >= preparedRows.length) continue;
+
+              const topRow = preparedRows[topRowIndex];
+              const headerKey = rawHeaders[c] || Object.keys(topRow).find(k => !k.startsWith('__') && topRow[k] !== undefined);
+              const topVal = (topRow.__cells && topRow.__cells[c] !== undefined && topRow.__cells[c] !== '')
+                ? topRow.__cells[c]
+                : (headerKey ? topRow[headerKey] : '');
+
+              if (topVal !== undefined && topVal !== null && String(topVal).trim() !== '') {
+                for (let r = m.s.r + 1; r <= m.e.r; r++) {
+                  const targetRowIdx = r - (headerIndex + 1);
+                  if (targetRowIdx >= 0 && targetRowIdx < preparedRows.length) {
+                    const targetRow = preparedRows[targetRowIdx];
+                    if (targetRow.__cells) {
+                      targetRow.__cells[c] = topVal;
+                    }
+                    if (headerKey) {
+                      targetRow[headerKey] = topVal;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        // Filter rows up to the "Tổng thành tiền" row by checking the STT column
+        const filteredRowsForTable: any[] = [];
 
         const isSequenceNumber = (val: any): boolean => {
           if (val === null || val === undefined) return false;
@@ -316,13 +370,15 @@ export default function BangKeView({
           return /^\d+(\.0+)?$/.test(s);
         };
 
-        for (let i = 0; i < sheetBangKe.rows.length; i++) {
-          const row = sheetBangKe.rows[i];
+        for (let i = 0; i < preparedRows.length; i++) {
+          const row = preparedRows[i];
           const rIdx = headerIndex + 1 + i;
 
-          // 1. Check if row is in any merge range (from merged cell downward, do not import)
-          const hasMerge = merges.some((m: any) => rIdx >= m.s.r && rIdx <= m.e.r);
-          if (hasMerge) {
+          // 1. Check if row is in a horizontal merge range across header columns (e.g. from col A to col C or more, typical for 'Tổng thành tiền' rows)
+          const hasHorizontalMerge = merges.some((m: any) => 
+            rIdx >= m.s.r && rIdx <= m.e.r && m.s.c === 0 && m.e.c >= 2
+          );
+          if (hasHorizontalMerge) {
             break;
           }
 
