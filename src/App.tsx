@@ -23,12 +23,15 @@ import {
   HelpCircle,
   RefreshCw,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  LogOut,
+  UserCheck
 } from 'lucide-react';
 import SettingsView from './components/SettingsView';
 import LuanChuyenView from './components/LuanChuyenView';
 import HopDongMoiView from './components/HopDongMoiView';
 import BangKeView from './components/BangKeView';
+import LoginModal from './components/LoginModal';
 import { downloadTemplate } from './utils/excel';
 import {
   hasValidGoogleSheetsUrl,
@@ -38,6 +41,7 @@ import {
   writeActionLogToSheet,
   getPortalUserEmail
 } from './services/dbService';
+import { getCurrentUser, logoutUser, GoogleUser } from './services/authService';
 
 const DEFAULT_RULES = [
   { id: 'rule_1', keyword: 'ADX - Viết nội dung', outputValue: 'Mua gói quảng cáo ADX' },
@@ -95,6 +99,10 @@ export default function App() {
     return localStorage.getItem('google_sheets_last_synced');
   });
 
+  const [currentUser, setCurrentUser] = useState<GoogleUser | null>(() => {
+    return getCurrentUser();
+  });
+
   // Tự động tìm kiếm email người dùng trên portal/url khi khởi chạy và ghi nhận log
   useEffect(() => {
     const initUserAndLog = async () => {
@@ -115,8 +123,16 @@ export default function App() {
           }
         }
 
-        // Cập nhật cấu hình nếu tìm thấy email mới
+        // 3. Nếu tìm thấy qua URL/Portal mà chưa có currentUser, tự set user
         if (finalEmail) {
+          if (!currentUser) {
+            const simulatedUser: GoogleUser = {
+              email: finalEmail,
+              name: finalEmail.split('@')[0],
+              sub: 'portal_user'
+            };
+            setCurrentUser(simulatedUser);
+          }
           setConfig(prev => {
             const updated = { ...prev, userName: finalEmail };
             localStorage.setItem('app_contract_settings', JSON.stringify(updated));
@@ -126,12 +142,29 @@ export default function App() {
       } catch (e) {
         console.error('Failed to get portal user email:', e);
       } finally {
-        // Ghi log khởi động ứng dụng
-        writeActionLogToSheet("Khởi động ứng dụng", "Đã mở trang đối chiếu Hợp đồng - Bảng kê");
+        if (finalEmail || currentUser) {
+          writeActionLogToSheet("Khởi động ứng dụng", `Đã mở trang đối chiếu Hợp đồng - Bảng kê (${finalEmail || currentUser?.email})`);
+        }
       }
     };
     initUserAndLog();
   }, []);
+
+  const handleLoginSuccess = (user: GoogleUser) => {
+    setCurrentUser(user);
+    setConfig(prev => {
+      const updated = { ...prev, userName: user.email };
+      localStorage.setItem('app_contract_settings', JSON.stringify(updated));
+      return updated;
+    });
+    writeActionLogToSheet("Đăng nhập Google thành công", `Người dùng ${user.name} (${user.email}) đã đăng nhập vào hệ thống.`);
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    setCurrentUser(null);
+    setConfig(prev => ({ ...prev, userName: 'Kế toán viên' }));
+  };
 
   // Tự động tải ngầm dữ liệu từ Google Sheets khi mở app
   useEffect(() => {
@@ -358,9 +391,45 @@ export default function App() {
 
         {/* User Workspace Info Footbar */}
         {!isCollapsed && (
-          <div className="p-4 border-t border-slate-100 bg-slate-50/40 text-xs text-slate-400 space-y-1 font-mono">
-            <p>Kế toán viên: <span className="text-slate-600 font-semibold">{config.userName || 'Kế toán viên'}</span></p>
-            <p>Môi trường: <span className="text-emerald-600 font-semibold">AI Studio MVP</span></p>
+          <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-xs">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2 overflow-hidden">
+                {currentUser?.picture ? (
+                  <img
+                    src={currentUser.picture}
+                    alt={currentUser.name}
+                    className="w-7 h-7 rounded-full border border-slate-200 object-cover flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                    {(currentUser?.name || config.userName || 'K').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-slate-800 truncate text-xs">
+                    {currentUser?.name || config.userName || 'Kế toán viên'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate font-mono">
+                    {currentUser?.email || config.userName || 'Chưa đăng nhập'}
+                  </p>
+                </div>
+              </div>
+
+              {currentUser && (
+                <button
+                  onClick={handleLogout}
+                  title="Đăng xuất"
+                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span>Môi trường:</span>
+              <span className="text-emerald-600 font-semibold">AI Studio MVP</span>
+            </div>
           </div>
         )}
       </aside>
@@ -444,6 +513,11 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* Google OAuth Login Modal if user is not authenticated */}
+      {!currentUser && (
+        <LoginModal onSuccess={handleLoginSuccess} />
+      )}
     </div>
   );
 }
