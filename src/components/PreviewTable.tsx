@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { Search, FileSpreadsheet, ChevronLeft, ChevronRight, Download, Filter } from 'lucide-react';
 import { ExcelSheetData } from '../types';
 import { exportToExcel } from '../utils/excel';
+import { formatRawDateValue } from '../utils/businessLogic';
 
 interface PreviewTableProps {
   id?: string;
@@ -69,7 +70,7 @@ export default function PreviewTable({
       return val.toString();
     }
     if (val instanceof Date) {
-      return val.toLocaleDateString('vi-VN');
+      return formatRawDateValue(val);
     }
     return String(val);
   };

@@ -522,9 +522,14 @@ export function formatRawDateValue(dateVal: any): string {
 
   if (dateVal instanceof Date) {
     if (isNaN(dateVal.getTime())) return '';
-    const day = String(dateVal.getDate()).padStart(2, '0');
-    const month = String(dateVal.getMonth() + 1).padStart(2, '0');
-    const year = dateVal.getFullYear();
+    // Khắc phục lỗi lịch sử múi giờ (LMT timezone bug trong SheetJS/Excel):
+    // Do độ lệch múi giờ lịch sử trước 1970 (GMT+6:42 vs GMT+7), các ngày Excel chuyển sang Date
+    // thường rơi vào 23:59:56 đêm ngày hôm trước thay vì 00:00:00 ngày hiện tại.
+    // Thêm 12 giờ để đưa mốc thời gian về an toàn ở giữa ngày chuẩn.
+    const adjusted = new Date(dateVal.getTime() + 12 * 3600 * 1000);
+    const day = String(adjusted.getDate()).padStart(2, '0');
+    const month = String(adjusted.getMonth() + 1).padStart(2, '0');
+    const year = adjusted.getFullYear();
     return `${day}/${month}/${year}`;
   }
 
