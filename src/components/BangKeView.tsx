@@ -21,7 +21,7 @@ import {
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
   parsePostingDateRange, parseContractDateFromBooking, buildFastContractLookup,
   getRawCellValue, lookupFastContractByBooking, buildGhiChuChiTietIdempotent,
-  sanitizeNewlinesToDash
+  sanitizeNewlinesToDash, extractSunContentDetail
 } from '../utils/businessLogic';
 import { 
   detectBangKeTemplate, getBangKeTemplateHandler, getAllBangKeTemplates 
@@ -684,9 +684,10 @@ export default function BangKeView({
 
             const tyLeCk = chietKhau;
 
-            // Chuyên trang — Ưu tiên exception rules, sau đó đến normalized.chuyenTrang; đảm bảo làm sạch Char(10)
+            // Chuyên trang — Ưu tiên exception rules, sau đó đến normalized.chuyenTrang, hoặc bóc tách Loại qc - Loại sp từ diễn giải gốc
             let exceptionText = applyExceptionRules(textToLookup, config.exceptionRules);
-            const chuyenTrang = sanitizeNewlinesToDash(exceptionText || normalized.chuyenTrang || noiDungQuangCao || '');
+            const extractedDetail = extractSunContentDetail(rawNoidung);
+            const chuyenTrang = sanitizeNewlinesToDash(exceptionText || normalized.chuyenTrang || extractedDetail || noiDungQuangCao || '');
 
             // Ghi chú chi tiết idempotent
             const ghiChuChiTiet = soHt ? buildGhiChuChiTietIdempotent(soHt, separator, suffix) : '';

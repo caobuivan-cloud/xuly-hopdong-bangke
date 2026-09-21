@@ -65,9 +65,11 @@ const standardTemplate: BangKeTemplateHandler = {
     const cleanBooking = cleanBookingCode(rawBooking);
     const rawSoHt = rawRow['Số HT'] || rawRow['So HT'] || rawRow['HT'] || '';
     const cleanSoHt = String(rawSoHt).trim();
-    const chuyenTrang = String(rawRow['Chuyên trang'] || rawRow['chuyenTrang'] || rawRow['Nhãn'] || '').trim();
+    const rawChuyenTrang = String(rawRow['Chuyên trang'] || rawRow['chuyenTrang'] || rawRow['Nhãn'] || '').trim();
     const rawNoiDung = String(rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || rawRow['noiDung'] || '');
+    const sunDetail = extractSunContentDetail(rawNoiDung);
     const noiDung = sanitizeNewlinesToDash(rawNoiDung);
+    const chuyenTrang = rawChuyenTrang || sunDetail;
 
     return {
       stt: rawRow['STT'] || rawRow['stt'],
@@ -160,15 +162,17 @@ const mmsTemplate: BangKeTemplateHandler = {
       }
     }
     if (thanhTienRaw === undefined) {
-      thanhTienRaw = rawRow['Thành tiền'] || rawRow['Thành tien'];
+      thanhTienRaw = rawRow['Thành tiền'] || rawRow['Thành tiền'];
     }
 
     const parsedThanhTien = parseOptionalNumber(thanhTienRaw);
     const rawChuyenTrang = String(rawRow['Chuyên trang'] || '').trim();
     const rawNhan = String(rawRow['Nhãn hàng'] || rawRow['Nhãn'] || '').trim();
-    const noiDung = sanitizeNewlinesToDash(rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || '');
-    // Ưu tiên cột Chuyên trang riêng nếu có; nếu không có thì dùng noiDung; Nhãn chỉ dùng fallback cuối cùng
-    const chuyenTrang = rawChuyenTrang || noiDung || rawNhan;
+    const rawNoiDung = rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || '';
+    const sunDetail = extractSunContentDetail(rawNoiDung);
+    const noiDung = sanitizeNewlinesToDash(rawNoiDung);
+    // Ưu tiên cột Chuyên trang riêng nếu có; nếu không có thì dùng sunDetail/noiDung; Nhãn chỉ dùng fallback cuối cùng
+    const chuyenTrang = rawChuyenTrang || sunDetail || noiDung || rawNhan;
 
     return {
       stt: rawRow['STT'] || rawRow['stt'],

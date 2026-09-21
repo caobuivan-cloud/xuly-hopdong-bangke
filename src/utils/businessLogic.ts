@@ -508,21 +508,49 @@ export function extractParenthesesTail(val: any, targetLength: number = 14): str
 }
 
 /**
- * Tách dòng và lấy nội dung sau tiền tố "Loại quảng cáo :" (mẫu SUN).
- * Hỗ trợ các biến thể hoa thường, có/không dấu cách trước sau dấu hai chấm.
+ * Tách dòng và lấy nội dung diễn giải từ ô "Nội dung quảng cáo":
+ * 1. Nếu có cả "Loại quảng cáo:" và "Loại sản phẩm:" (hoặc Loại sp/SP) -> nối thành: `Loại quảng cáo - Loại sản phẩm`
+ * 2. Nếu chỉ có "Loại quảng cáo:" -> lấy `Loại quảng cáo`
+ * 3. Nếu không có "Loại quảng cáo:" -> chuyển toàn bộ Char(10) (xuống dòng) thành dấu nối ` - `
  */
 export function extractSunContentDetail(rawContent: any): string {
   if (!rawContent) return '';
   const text = String(rawContent);
   const lines = text.split(/[\r\n]+/);
+
+  let loaiQc = '';
+  let loaiSp = '';
+
   for (const line of lines) {
     const trimmed = line.trim();
-    const match = trimmed.match(/^loại\s*quảng\s*cáo\s*:\s*(.+)$/i);
-    if (match && match[1]) {
-      return match[1].trim();
+    
+    // Nhận diện dòng "Loại quảng cáo :"
+    const qcMatch = trimmed.match(/^loại\s*quảng\s*cáo\s*:\s*(.+)$/i);
+    if (qcMatch && qcMatch[1]) {
+      loaiQc = qcMatch[1].trim();
+      continue;
+    }
+
+    // Nhận diện dòng "Loại sản phẩm :" hoặc "Loại sp :" / "Loại SP :"
+    const spMatch = trimmed.match(/^loại\s*(?:sản\s*phẩm|sp)\s*:\s*(.+)$/i);
+    if (spMatch && spMatch[1]) {
+      loaiSp = spMatch[1].trim();
+      continue;
     }
   }
-  return lines[0]?.trim() || text.trim();
+
+  // Trường hợp 1: Có cả Loại quảng cáo và Loại sản phẩm -> Nối `Loại quảng cáo - Loại sản phẩm`
+  if (loaiQc && loaiSp) {
+    return `${loaiQc} - ${loaiSp}`;
+  }
+
+  // Trường hợp 2: Chỉ có Loại quảng cáo -> Lấy Loại quảng cáo
+  if (loaiQc) {
+    return loaiQc;
+  }
+
+  // Trường hợp 3: Không có Loại quảng cáo -> Thay toàn bộ Char(10) thành dấu nối (-)
+  return sanitizeNewlinesToDash(text);
 }
 
 /**

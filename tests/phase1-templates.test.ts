@@ -12,6 +12,8 @@ import {
   cleanBookingCode,
   buildGhiChuChiTietIdempotent,
   parseOptionalNumber,
+  extractSunContentDetail,
+  sanitizeNewlinesToDash,
 } from '../src/utils/businessLogic';
 
 console.log('--- BẮT ĐẦU CHẠY SUITE TEST PHASE 1 ---');
@@ -171,6 +173,26 @@ if (giaTriCuaVvVat !== 16740000) {
   throw new Error(`Tính thuế bị sai: mong đợi 16,740,000 nhưng ra ${giaTriCuaVvVat}`);
 }
 console.log(`- Tiền nguồn: ${thanhTienSauCk}, VAT 8% -> Giá trị vv VAT: ${giaTriCuaVvVat}`);
-console.log('✅ Passed: Tiền nguồn cố ý lệch được bảo toàn tuyệt đối, VAT tính chuẩn 16,740,000');
+console.log('\n[TEST 6] Kiểm thử extractSunContentDetail (bóc tách Loại quảng cáo / Loại sản phẩm):');
+const caseBoth = 'Loại quảng cáo: Admatic\nLoại sản phẩm: Gói nhiều sản phẩm\nTag: News, Entertainment';
+const resBoth = extractSunContentDetail(caseBoth);
+if (resBoth !== 'Admatic - Gói nhiều sản phẩm') {
+  throw new Error(`Mong đợi "Admatic - Gói nhiều sản phẩm" nhưng nhận được "${resBoth}"`);
+}
+console.log('✅ Passed: Có cả Loại quảng cáo và Loại sản phẩm -> Nối thành công:', resBoth);
+
+const caseOnlyQc = 'Loại quảng cáo : Banner\nKích thước: 300x250';
+const resOnlyQc = extractSunContentDetail(caseOnlyQc);
+if (resOnlyQc !== 'Banner') {
+  throw new Error(`Mong đợi "Banner" nhưng nhận được "${resOnlyQc}"`);
+}
+console.log('✅ Passed: Chỉ có Loại quảng cáo -> Lấy Loại quảng cáo:', resOnlyQc);
+
+const caseNoQc = 'Quảng cáo bài PR\nTrang chuyên mục\nKhông có loại quảng cáo';
+const resNoQc = extractSunContentDetail(caseNoQc);
+if (resNoQc !== 'Quảng cáo bài PR - Trang chuyên mục - Không có loại quảng cáo') {
+  throw new Error(`Mong đợi thay thế Char(10) thành dấu (-) nhưng nhận được "${resNoQc}"`);
+}
+console.log('✅ Passed: Không có Loại quảng cáo -> Thay toàn bộ Char(10) thành dấu (-):', resNoQc);
 
 console.log('\n🎉 TOÀN BỘ SUITE TEST PHASE 1 ĐÃ VƯỢT QUA XUẤT SẮC! 🎉\n');

@@ -5,6 +5,19 @@
 > Ngôn ngữ: Tiếng Việt
 ## 2026-09-21
 
+### feat(bangke): bóc tách và ghép Loại quảng cáo - Loại sản phẩm đưa vào Chuyên trang
+- Nâng cấp hàm `extractSunContentDetail` trong `businessLogic.ts` hỗ trợ tự động bóc tách từ ô `Nội dung quảng cáo`:
+  + Nếu có cả `Loại quảng cáo:` và `Loại sản phẩm:` (hoặc `Loại sp/SP:`) -> nối thành `Loại quảng cáo - Loại sản phẩm` đưa vào Chuyên trang (Ví dụ: `Admatic - Gói nhiều sản phẩm`).
+  + Nếu chỉ có `Loại quảng cáo:` -> lấy chính xác `Loại quảng cáo`.
+  + Nếu không có `Loại quảng cáo:` -> thay thế toàn bộ ký tự xuống dòng `Char(10)` thành dấu nối ` - `.
+- Tích hợp logic xử lý vào `bangKeTemplates.ts` (mẫu SUN, Standard, MMS) và `BangKeView.tsx` khi xuất kết quả sang FAST.
+- Bổ sung unit test `TEST 6` trong `tests/phase1-templates.test.ts` kiểm thử tự động cho cả 3 trường hợp.
+- Files:
+  - [businessLogic.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/businessLogic.ts)
+  - [bangKeTemplates.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/bangKeTemplates.ts)
+  - [BangKeView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/BangKeView.tsx)
+  - [phase1-templates.test.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/tests/phase1-templates.test.ts)
+
 ### feat(bangke): chuyển đổi ký tự xuống dòng Char(10) trong nội dung quảng cáo thành dấu nối (-)
 - Bổ sung hàm tiện ích `sanitizeNewlinesToDash` trong `businessLogic.ts` giúp chuyển đổi toàn bộ `Char(10)` (`\n`), `\r` thành ` - ` và chuẩn hóa khoảng trắng dư thừa.
 - Chuẩn hóa nội dung quảng cáo và chuyên trang trong các mẫu bảng kê (`STANDARD`, `MMS`, `SUN`) và giao diện xuất file Excel FAST (`BangKeView.tsx`).
