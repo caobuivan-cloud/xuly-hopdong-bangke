@@ -20,7 +20,8 @@ import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fast
 import { 
   normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
   parsePostingDateRange, parseContractDateFromBooking, buildFastContractLookup,
-  getRawCellValue, lookupFastContractByBooking, buildGhiChuChiTietIdempotent
+  getRawCellValue, lookupFastContractByBooking, buildGhiChuChiTietIdempotent,
+  sanitizeNewlinesToDash
 } from '../utils/businessLogic';
 import { 
   detectBangKeTemplate, getBangKeTemplateHandler, getAllBangKeTemplates 
@@ -573,7 +574,8 @@ export default function BangKeView({
             const maBooking = normalized.maBooking || getRawCellValue(rawRow, 1) || getFieldValue(rawRow, 'maBooking', ['Mã booking', 'Ma booking', 'Booking']).trim();
             const soHt = normalized.soHt || getFieldValue(rawRow, 'soHt', ['Số HT', 'So HT', 'HT', 'Hệ thống']).trim();
             const nhan = getFieldValue(rawRow, 'nhan', ['Nhãn', 'Nhan', 'Brand', 'Thương hiệu']).trim();
-            const noiDungQuangCao = normalized.noiDung || getFieldValue(rawRow, 'noiDungQuangCao', ['Nội dung quảng cáo', 'Noi dung quang cao', 'Nội dung', 'Diễn giải']).trim();
+            const rawNoidung = normalized.noiDung || getFieldValue(rawRow, 'noiDungQuangCao', ['Nội dung quảng cáo', 'Noi dung quang cao', 'Nội dung', 'Diễn giải']).trim();
+            const noiDungQuangCao = sanitizeNewlinesToDash(rawNoidung);
             const chiTiet = normalized.chuyenTrang || getFieldValue(rawRow, 'chiTiet', ['Chi tiết', 'Chi tiet', 'Chi tiết chạy']).trim();
             
             let lichDang = normalized.lichDang || getFieldValue(rawRow, 'lichDang', ['Lịch đăng', 'Lich dang', 'Lịch chạy', 'Lich chay', 'Thời gian chạy', 'Thoi gian chay', 'Thời gian', 'Thoi gian']).trim();
@@ -598,13 +600,20 @@ export default function BangKeView({
             let fastGhiChu = '';
 
             if (sheetFast) {
-              const match = lookupFastContractByBooking(fastLookupMap, maBooking);
-              if (match) {
+              // Priority 1: Match exactly by clean maBooking
+              let matchedContract = lookupFastContractByBooking(fastLookupMap, maBooking);
+
+              // Priority 2: Fallback to match by tenHopDong (for backward compatibility)
+              if (!matchedContract && tenHopDong) {
+                matchedContract = fastLookupMap.get(normalizeText(tenHopDong));
+              }
+
+              if (matchedContract) {
                 existsInFast = true;
-                fastStatus = match.fastStatus;
-                fastMaKhach = match.fastMaKhach;
-                fastBoPhanThucHien = match.fastBoPhanThucHien;
-                fastGhiChu = match.fastGhiChu;
+                fastStatus = matchedContract.fastStatus;
+                fastMaKhach = matchedContract.fastMaKhach;
+                fastBoPhanThucHien = matchedContract.fastBoPhanThucHien;
+                fastGhiChu = matchedContract.fastGhiChu;
               }
             }
 
@@ -675,9 +684,9 @@ export default function BangKeView({
 
             const tyLeCk = chietKhau;
 
-            // Chuyên trang — Ưu tiên exception rules, sau đó đến normalized.chuyenTrang
+            // Chuyên trang — Ưu tiên exception rules, sau đó đến normalized.chuyenTrang; đảm bảo làm sạch Char(10)
             let exceptionText = applyExceptionRules(textToLookup, config.exceptionRules);
-            const chuyenTrang = exceptionText || normalized.chuyenTrang || noiDungQuangCao || '';
+            const chuyenTrang = sanitizeNewlinesToDash(exceptionText || normalized.chuyenTrang || noiDungQuangCao || '');
 
             // Ghi chú chi tiết idempotent
             const ghiChuChiTiet = soHt ? buildGhiChuChiTietIdempotent(soHt, separator, suffix) : '';

@@ -19,6 +19,7 @@ import {
   buildGhiChuChiTietIdempotent,
   parseAndSumDiscounts,
   parseOptionalNumber,
+  sanitizeNewlinesToDash,
 } from './businessLogic';
 
 export interface BangKeTemplateHandler extends BangKeTemplateConfig {
@@ -65,7 +66,8 @@ const standardTemplate: BangKeTemplateHandler = {
     const rawSoHt = rawRow['Số HT'] || rawRow['So HT'] || rawRow['HT'] || '';
     const cleanSoHt = String(rawSoHt).trim();
     const chuyenTrang = String(rawRow['Chuyên trang'] || rawRow['chuyenTrang'] || rawRow['Nhãn'] || '').trim();
-    const noiDung = String(rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || rawRow['noiDung'] || '').trim();
+    const rawNoiDung = String(rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || rawRow['noiDung'] || '');
+    const noiDung = sanitizeNewlinesToDash(rawNoiDung);
 
     return {
       stt: rawRow['STT'] || rawRow['stt'],
@@ -103,38 +105,35 @@ const mmsTemplate: BangKeTemplateHandler = {
     const rawArray = sheet.rawArray || [];
     const headerRow = sheet.headerRowIndex ?? 0;
 
-    // Lớp 1: Quét tiêu đề/bên A ở các dòng phía trên header
+    // Lớp 1: Quét các dòng trước header tìm metadata tên Bên A / MMS
     for (let r = 0; r < headerRow; r++) {
       const row = rawArray[r];
       if (!Array.isArray(row)) continue;
       const rowStr = normalizeText(row.join(' '));
-      if (rowStr.includes('mms') || rowStr.includes('mindshare') || rowStr.includes('mediacom') || rowStr.includes('wavemaker')) {
+      if (rowStr.includes('mms') || rowStr.includes('mindshare') || rowStr.includes('mediamind')) {
         score += 50;
       }
     }
 
-    // Lớp 2: Kiểm tra header columns
+    // Lớp 2: Quét header
     const headers = sheet.headers.map(normalizeText);
-    const hasHopDong = headers.some(h => h === 'hop dong' || h.startsWith('hop dong'));
+    const hasHopDong = headers.some(h => h === 'hop dong' || h.includes('hop dong'));
     const hasThanhTienKhongVat = headers.some(h => h.includes('thanh tien') && h.includes('khong vat'));
     const hasSoHt = headers.some(h => h === 'so ht' || h.includes('so ht'));
 
-    if (hasHopDong) score += 25;
-    if (hasThanhTienKhongVat) score += 35;
-    if (hasSoHt) score += 15;
+    if (hasHopDong) score += 30;
+    if (hasThanhTienKhongVat) score += 30;
+    if (hasSoHt) score += 10;
 
     // Lớp 3: Data sampling
     if (sheet.rows && sheet.rows.length > 0) {
       const sample = sheet.rows[0];
       const sampleKeys = Object.keys(sample);
-      const hopDongKey = sampleKeys.find(k => normalizeText(k) === 'hop dong');
-      if (hopDongKey && sample[hopDongKey]) {
-        const sampleVal = String(sample[hopDongKey]).trim();
-        // Kiểm tra định dạng hợp đồng/booking của MMS (thường chứa BK hoặc kết thúc /AD)
-        if (/bk|\/ad/i.test(sampleVal)) {
-          score += 20;
-        }
-      }
+      const ttKey = sampleKeys.find(k => {
+        const norm = normalizeText(k);
+        return norm.includes('thanh tien') && norm.includes('khong vat');
+      });
+      if (ttKey && sample[ttKey] !== undefined) score += 10;
     }
 
     return {
@@ -161,13 +160,13 @@ const mmsTemplate: BangKeTemplateHandler = {
       }
     }
     if (thanhTienRaw === undefined) {
-      thanhTienRaw = rawRow['Thành tiền'] || rawRow['Thanh tien'];
+      thanhTienRaw = rawRow['Thành tiền'] || rawRow['Thành tien'];
     }
 
     const parsedThanhTien = parseOptionalNumber(thanhTienRaw);
     const rawChuyenTrang = String(rawRow['Chuyên trang'] || '').trim();
     const rawNhan = String(rawRow['Nhãn hàng'] || rawRow['Nhãn'] || '').trim();
-    const noiDung = String(rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || '').trim();
+    const noiDung = sanitizeNewlinesToDash(rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || '');
     // Ưu tiên cột Chuyên trang riêng nếu có; nếu không có thì dùng noiDung; Nhãn chỉ dùng fallback cuối cùng
     const chuyenTrang = rawChuyenTrang || noiDung || rawNhan;
 
@@ -233,7 +232,7 @@ const sunTemplate: BangKeTemplateHandler = {
       const sampleValues = Object.values(sample).map(v => String(v));
       const hasSunContentType = sampleValues.some(v => /loại\s*quảng\s*cáo\s*:/i.test(v));
       const hasParenthesesTail = sampleValues.some(v => /\([0-9a-zA-Z\s/-]+\)$/.test(v.trim()));
-      if (hasSunContentType) score += 30;
+      if (hasSunContentType) score += 20;
       if (hasParenthesesTail) score += 15;
     }
 
@@ -253,6 +252,7 @@ const sunTemplate: BangKeTemplateHandler = {
     // Nội dung quảng cáo: tách "Loại quảng cáo :"
     const rawNoiDung = rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || '';
     const sunDetail = extractSunContentDetail(rawNoiDung);
+    const cleanNoiDung = sanitizeNewlinesToDash(rawNoiDung);
 
     const chuyenTrang = sunDetail || String(rawRow['Chuyên trang'] || '').trim();
     const parsedThanhTien = parseOptionalNumber(rawRow['Thành tiền sau chiết khấu (VNĐ)'] || rawRow['Thành tiền']);
@@ -265,8 +265,8 @@ const sunTemplate: BangKeTemplateHandler = {
       soHt: cleanSoHt,
       rawSoHt: String(rawSoHt).trim(),
       chuyenTrang,
-      lookupContent: sunDetail || chuyenTrang || String(rawNoiDung).trim(),
-      noiDung: String(rawNoiDung).trim(),
+      lookupContent: sunDetail || chuyenTrang || cleanNoiDung,
+      noiDung: cleanNoiDung,
       soLuong: parseOptionalNumber(rawRow['Số lượng']) ?? undefined,
       donGia: parseOptionalNumber(rawRow['Đơn giá']) ?? undefined,
       chietKhau: parseOptionalNumber(rawRow['Chiết khấu'] || rawRow['CK']) ?? undefined,

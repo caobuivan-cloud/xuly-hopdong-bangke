@@ -478,6 +478,18 @@ export function parseContractDateFromBooking(maBooking: string): {
 }
 
 /**
+ * Chuyển đổi các ký tự xuống dòng (Char(10) \n, Char(13) \r) thành dấu nối " - "
+ * và làm sạch khoảng trắng dư thừa liên tiếp.
+ */
+export function sanitizeNewlinesToDash(val: any): string {
+  if (val === undefined || val === null) return '';
+  return String(val)
+    .replace(/[\r\n]+/g, ' - ')
+    .replace(/\s*-\s*/g, ' - ')
+    .trim();
+}
+
+/**
  * Helper trích xuất ký tự trong ngoặc đơn cuối chuỗi (dùng cho SUN, WPP để lấy 14 ký tự Số HT).
  * Ví dụ: "Dịch vụ quảng cáo... (12345678901234)" -> "12345678901234"
  */

@@ -3,6 +3,17 @@
 > Phạm vi: Frontend, UI, UX, state client, routing, hiển thị, validation phía client
 > Format: [Conventional Commits](https://www.conventionalcommits.org/)
 > Ngôn ngữ: Tiếng Việt
+## 2026-09-21
+
+### feat(bangke): chuyển đổi ký tự xuống dòng Char(10) trong nội dung quảng cáo thành dấu nối (-)
+- Bổ sung hàm tiện ích `sanitizeNewlinesToDash` trong `businessLogic.ts` giúp chuyển đổi toàn bộ `Char(10)` (`\n`), `\r` thành ` - ` và chuẩn hóa khoảng trắng dư thừa.
+- Chuẩn hóa nội dung quảng cáo và chuyên trang trong các mẫu bảng kê (`STANDARD`, `MMS`, `SUN`) và giao diện xuất file Excel FAST (`BangKeView.tsx`).
+- Ngăn chặn triệt để lỗi ô Excel bị vỡ dòng và phình to chiều cao dòng khi xuất kết quả Bảng kê.
+- Files:
+  - [businessLogic.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/businessLogic.ts)
+  - [bangKeTemplates.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/bangKeTemplates.ts)
+  - [BangKeView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/BangKeView.tsx)
+
 ## 2026-09-19
 
 ### feat(bangke): nhận diện tự động đa mẫu bảng kê (MMS, SUN, WPP) & chọn mẫu độc lập từng file
@@ -37,6 +48,16 @@
   - [excel.ts](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/utils/excel.ts)
   - [ExcelUpload.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/ExcelUpload.tsx)
   - [SettingsView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/SettingsView.tsx)
+
+## 2026-07-09
+
+### fix(hop-dong-moi): sửa logic lọc trùng hợp đồng và tối ưu chuẩn hóa mã
+- Thay thế hàm `normalizeText` bằng `normalizeContractNameKey` khi tạo bảng băm và đối soát hợp đồng với danh sách FAST (`fastLookupMap`), giúp so khớp chuẩn xác và loại bỏ khoảng trắng xung quanh ký tự `/` (ví dụ: `HD01/AD` khớp hoàn toàn với `HD01 / AD`).
+- Loại bỏ hoàn toàn ngoại lệ `isStatus2` khỏi điều kiện lọc UI (`shouldKeepRow`) và danh sách xuất Excel (`eligibleExportRows`): tất cả hợp đồng đã tồn tại trong danh sách FAST bị loại trừ 100% bất kể trạng thái là 1 hay 2.
+- Ghi chú rõ ràng trong code hành vi xuất Excel FAST (`eligibleExportRows`) luôn tự động loại trừ trùng lặp độc lập với trạng thái toggle `filterActive` trên UI nhằm đảm bảo tính toàn vẹn dữ liệu hạch toán.
+- Files:
+  - [HopDongMoiView.tsx](file:///d:/Project_VCC/KeToanVCC/Xu%20ly%20hop%20dong%20-%20bang%20ke/src/components/HopDongMoiView.tsx)
+
 
 ## 2026-06-29
 
