@@ -130,13 +130,15 @@ export default function BangKeView({
     return sheetFast ? buildFastContractLookup(sheetFast.rows) : new Map();
   }, [fileFast]);
 
-  const replaceUploadedFiles = (
-    files: UploadedFileData[],
+  const appendUploadedFiles = (
+    incomingFiles: UploadedFileData[],
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
+    if (!incomingFiles || incomingFiles.length === 0) return;
+
     const action = () => {
       // Bổ sung id duy nhất và auto-detect template cho bảng kê
-      const enrichedFiles = files.map(file => {
+      const enrichedNewFiles = incomingFiles.map(file => {
         const fileId = file.id || `file_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         let templateId = file.templateId;
         if (!templateId && setter === setFileBangKeList && file.sheets.length > 0) {
@@ -149,24 +151,58 @@ export default function BangKeView({
         };
       });
 
-      setter(enrichedFiles);
-      setProcessedRows(null);
-      if (enrichedFiles.length > 0) {
-        const fileNames = enrichedFiles.map(f => f.fileName).join(', ');
+      setter(prevFiles => {
+        // Lọc tránh trùng lặp file (cùng tên và cùng kích thước)
+        const nonDuplicateFiles = enrichedNewFiles.filter(newF => 
+          !prevFiles.some(existing => existing.fileName === newF.fileName && existing.fileSize === newF.fileSize)
+        );
+
+        if (nonDuplicateFiles.length === 0) {
+          return prevFiles;
+        }
+
+        const updated = [...prevFiles, ...nonDuplicateFiles];
         const isFast = setter === setFileFastList;
         const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
+        const fileNames = nonDuplicateFiles.map(f => f.fileName).join(', ');
         writeActionLogToSheet(
-          `Tải file ${typeStr}`,
-          `Tải lên tệp: ${fileNames}`
+          `Thêm file ${typeStr}`,
+          `Đã bổ sung ${nonDuplicateFiles.length} tệp: ${fileNames} (Tổng: ${updated.length} tệp)`
         );
-      }
+        return updated;
+      });
+
+      setProcessedRows(null);
     };
 
     if (processedRows) {
       setConfirmConfig({
-        title: 'Xác nhận thay đổi file',
-        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?',
+        title: 'Xác nhận bổ sung file',
+        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ được làm mới khi thêm file mới. Bạn có chắc chắn muốn bổ sung file vào danh sách không?',
         type: 'warning',
+        onConfirm: action
+      });
+    } else {
+      action();
+    }
+  };
+
+  const clearUploadedFiles = (
+    setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
+  ) => {
+    const action = () => {
+      setter(() => []);
+      setProcessedRows(null);
+      const isFast = setter === setFileFastList;
+      const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Bảng kê chi tiết";
+      writeActionLogToSheet(`Xóa tất cả file ${typeStr}`, `Đã dọn dẹp toàn bộ danh sách file ${typeStr}`);
+    };
+
+    if (processedRows) {
+      setConfirmConfig({
+        title: 'Xác nhận xóa tất cả file',
+        message: 'Tất cả file đã chọn và dữ liệu bảng kê đã xử lý sẽ bị xóa. Bạn có chắc chắn không?',
+        type: 'danger',
         onConfirm: action
       });
     } else {
@@ -1157,17 +1193,26 @@ export default function BangKeView({
             compact
             showSuccessDetails={false}
             onUploadSuccess={(data) => {
-              replaceUploadedFiles([data], setFileBangKeList);
+              appendUploadedFiles([data], setFileBangKeList);
             }}
             onUploadManySuccess={(data) => {
-              replaceUploadedFiles(data, setFileBangKeList);
+              appendUploadedFiles(data, setFileBangKeList);
             }}
             onUploadError={(err) => setErrorMessage(err)}
-            placeholderText="Kéo thả một hoặc nhiều File Bảng kê chi tiết vào đây hoặc click để chọn"
+            placeholderText="Kéo thả một hoặc nhiều File Bảng kê chi tiết vào đây hoặc click để chọn (chọn nhiều đợt/nhiều folder)"
           />
           {fileBangKeList.length > 0 && (
             <div className="space-y-1.5">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">File đã tải lên ({fileBangKeList.length})</div>
+              <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                <span>File đã tải lên ({fileBangKeList.length})</span>
+                <button
+                  type="button"
+                  onClick={() => clearUploadedFiles(setFileBangKeList)}
+                  className="text-rose-500 hover:text-rose-700 hover:underline normal-case font-medium text-[10px]"
+                >
+                  Xóa tất cả
+                </button>
+              </div>
               <div className="space-y-1.5">
                 {fileBangKeList.map((file, index) => {
                   const currentTemplate = file.templateId || 'STANDARD';
@@ -1237,17 +1282,26 @@ export default function BangKeView({
             compact
             showSuccessDetails={false}
             onUploadSuccess={(data) => {
-              replaceUploadedFiles([data], setFileFastList);
+              appendUploadedFiles([data], setFileFastList);
             }}
             onUploadManySuccess={(data) => {
-              replaceUploadedFiles(data, setFileFastList);
+              appendUploadedFiles(data, setFileFastList);
             }}
             onUploadError={(err) => setErrorMessage(err)}
-            placeholderText="Kéo thả một hoặc nhiều File Danh sách hợp đồng Fast vào đây hoặc click để chọn"
+            placeholderText="Kéo thả một hoặc nhiều File Danh sách hợp đồng Fast vào đây hoặc click để chọn (chọn nhiều đợt/nhiều folder)"
           />
           {fileFastList.length > 0 && (
             <div className="space-y-1.5">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">File đã tải lên ({fileFastList.length})</div>
+              <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                <span>File đã tải lên ({fileFastList.length})</span>
+                <button
+                  type="button"
+                  onClick={() => clearUploadedFiles(setFileFastList)}
+                  className="text-rose-500 hover:text-rose-700 hover:underline normal-case font-medium text-[10px]"
+                >
+                  Xóa tất cả
+                </button>
+              </div>
               <div className="space-y-1">
                 {fileFastList.map((file, index) => (
                   <div key={`${file.fileName}_${index}`} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">

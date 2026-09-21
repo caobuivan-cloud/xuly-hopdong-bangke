@@ -122,29 +122,64 @@ export default function LuanChuyenView({
   const fileCung = useMemo(() => mergeUploadedFiles(fileCungList, 'Hợp đồng luân chuyển'), [fileCungList]);
   const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
 
-  const replaceUploadedFiles = (
-    files: UploadedFileData[],
+  const appendUploadedFiles = (
+    incomingFiles: UploadedFileData[],
     setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
   ) => {
+    if (!incomingFiles || incomingFiles.length === 0) return;
+
     const action = () => {
-      setter(files);
-      setProcessedRows(null);
-      if (files.length > 0) {
-        const fileNames = files.map(f => f.fileName).join(', ');
+      setter(prevFiles => {
+        const nonDuplicateFiles = incomingFiles.filter(newF => 
+          !prevFiles.some(existing => existing.fileName === newF.fileName && existing.fileSize === newF.fileSize)
+        );
+
+        if (nonDuplicateFiles.length === 0) {
+          return prevFiles;
+        }
+
+        const updated = [...prevFiles, ...nonDuplicateFiles];
         const isFast = setter === setFileFastList;
         const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng luân chuyển";
+        const fileNames = nonDuplicateFiles.map(f => f.fileName).join(', ');
         writeActionLogToSheet(
-          `Tải file ${typeStr}`,
-          `Tải lên tệp: ${fileNames}`
+          `Thêm file ${typeStr}`,
+          `Đã bổ sung ${nonDuplicateFiles.length} tệp: ${fileNames} (Tổng: ${updated.length} tệp)`
         );
-      }
+        return updated;
+      });
+
+      setProcessedRows(null);
     };
 
     if (processedRows) {
       setConfirmConfig({
-        title: 'Xác nhận thay đổi file',
-        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ bị mất nếu tiếp tục. Bạn có chắc chắn muốn thay đổi danh sách file không?',
+        title: 'Xác nhận bổ sung file',
+        message: 'Dữ liệu đã xử lý và các thay đổi thủ công trên bảng sẽ được làm mới khi thêm file mới. Bạn có chắc chắn muốn bổ sung file vào danh sách không?',
         type: 'warning',
+        onConfirm: action
+      });
+    } else {
+      action();
+    }
+  };
+
+  const clearUploadedFiles = (
+    setter: React.Dispatch<React.SetStateAction<UploadedFileData[]>>
+  ) => {
+    const action = () => {
+      setter(() => []);
+      setProcessedRows(null);
+      const isFast = setter === setFileFastList;
+      const typeStr = isFast ? "Danh sách hợp đồng Fast" : "Hợp đồng luân chuyển";
+      writeActionLogToSheet(`Xóa tất cả file ${typeStr}`, `Đã dọn dẹp toàn bộ danh sách file ${typeStr}`);
+    };
+
+    if (processedRows) {
+      setConfirmConfig({
+        title: 'Xác nhận xóa tất cả file',
+        message: 'Tất cả file đã chọn và dữ liệu đã xử lý sẽ bị xóa. Bạn có chắc chắn không?',
+        type: 'danger',
         onConfirm: action
       });
     } else {
@@ -694,18 +729,25 @@ export default function LuanChuyenView({
             compact
             showSuccessDetails={false}
             onUploadSuccess={(data) => {
-              replaceUploadedFiles([data], setFileCungList);
+              appendUploadedFiles([data], setFileCungList);
             }}
             onUploadManySuccess={(data) => {
-              replaceUploadedFiles(data, setFileCungList);
+              appendUploadedFiles(data, setFileCungList);
             }}
             onUploadError={(err) => setErrorMessage(err)}
-            placeholderText="Kéo thả một hoặc nhiều File Hợp đồng cứng (.xlsx, .xls) vào đây hoặc click để chọn"
+            placeholderText="Kéo thả một hoặc nhiều File Hợp đồng cứng (.xlsx, .xls) vào đây hoặc click để chọn (chọn nhiều đợt/nhiều folder)"
           />
           {fileCungList.length > 0 && (
             <div className="space-y-1.5">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-                File đã tải lên ({fileCungList.length})
+              <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                <span>File đã tải lên ({fileCungList.length})</span>
+                <button
+                  type="button"
+                  onClick={() => clearUploadedFiles(setFileCungList)}
+                  className="text-rose-500 hover:text-rose-700 hover:underline normal-case font-medium text-[10px]"
+                >
+                  Xóa tất cả
+                </button>
               </div>
               <div className="space-y-1">
                 {fileCungList.map((file, index) => (
@@ -753,18 +795,25 @@ export default function LuanChuyenView({
             compact
             showSuccessDetails={false}
             onUploadSuccess={(data) => {
-              replaceUploadedFiles([data], setFileFastList);
+              appendUploadedFiles([data], setFileFastList);
             }}
             onUploadManySuccess={(data) => {
-              replaceUploadedFiles(data, setFileFastList);
+              appendUploadedFiles(data, setFileFastList);
             }}
             onUploadError={(err) => setErrorMessage(err)}
-            placeholderText="Kéo thả một hoặc nhiều File Fast (.xlsx, .xls) vào đây hoặc click để chọn"
+            placeholderText="Kéo thả một hoặc nhiều File Fast (.xlsx, .xls) vào đây hoặc click để chọn (chọn nhiều đợt/nhiều folder)"
           />
           {fileFastList.length > 0 && (
             <div className="space-y-1.5">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-                File đã tải lên ({fileFastList.length})
+              <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                <span>File đã tải lên ({fileFastList.length})</span>
+                <button
+                  type="button"
+                  onClick={() => clearUploadedFiles(setFileFastList)}
+                  className="text-rose-500 hover:text-rose-700 hover:underline normal-case font-medium text-[10px]"
+                >
+                  Xóa tất cả
+                </button>
               </div>
               <div className="space-y-1">
                 {fileFastList.map((file, index) => (
