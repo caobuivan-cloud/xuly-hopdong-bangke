@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx tests/phase1-templates.test.ts && tsx tests/pipeline-fast-test.ts && tsx tests/feedback-matching.test.ts",
+    "test": "tsx tests/phase1-templates.test.ts && tsx tests/pipeline-fast-test.ts && tsx tests/feedback-matching.test.ts && tsx tests/keyword-selector.test.ts",
     "test:phase1": "tsx tests/phase1-templates.test.ts"
   },
   "dependencies": {

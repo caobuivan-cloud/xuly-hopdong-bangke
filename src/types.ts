@@ -118,6 +118,8 @@ export interface ProductMaster {
 export interface LearnedRule {
   id: string;
   rawContentPattern: string;
+  keyword?: string;
+  keywords?: string[];
   chuyenTrang?: string;
   donViTinh?: string;
   maVuViec: string;

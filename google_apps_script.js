@@ -26,27 +26,42 @@ const LOGS_SHEET = "ActivityLogs";
 const SPREADSHEET_ID = "1-_xq6s9A4mYC6NyQoxZQfMoKz7SqkpW1Oq0iPpu7O-o";
 
 function getSpreadsheet() {
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
   try {
-    return SpreadsheetApp.openById(SPREADSHEET_ID);
-  } catch (e) {
-    return SpreadsheetApp.getActiveSpreadsheet();
-  }
+    if (SPREADSHEET_ID && SPREADSHEET_ID.trim()) {
+      return SpreadsheetApp.openById(SPREADSHEET_ID);
+    }
+  } catch (e) {}
+  return null;
+}
+
+function getSheetMap(ss) {
+  const map = {};
+  const sheets = ss.getSheets();
+  sheets.forEach(s => {
+    map[s.getName()] = s;
+  });
+  return map;
 }
 
 function doGet(e) {
-  const action = e.parameter.action;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  initializeSheets(ss, [CONFIG_SHEET, RULES_SHEET, DEPTS_SHEET, CUSTS_SHEET, PRODS_SHEET, SITES_SHEET, LEARNED_SHEET]);
+  const action = (e && e.parameter && e.parameter.action) || '';
+  const ss = getSpreadsheet();
+  if (!ss) {
+    return createJsonResponse({ error: "Không tìm thấy Spreadsheet. Vui lòng mở Apps Script từ chính Google Sheet (Extensions > Apps Script)." });
+  }
   
   if (action === 'read_all') {
+    const sheetMap = getSheetMap(ss);
     const data = {
-      config: readSheetData(ss.getSheetByName(CONFIG_SHEET), true),
-      exceptionRules: readSheetData(ss.getSheetByName(RULES_SHEET)),
-      departments: readSheetData(ss.getSheetByName(DEPTS_SHEET)),
-      customers: readSheetData(ss.getSheetByName(CUSTS_SHEET)),
-      products: readSheetData(ss.getSheetByName(PRODS_SHEET)),
-      sites: readSheetData(ss.getSheetByName(SITES_SHEET)),
-      learnedRules: readSheetData(ss.getSheetByName(LEARNED_SHEET))
+      config: readSheetData(sheetMap[CONFIG_SHEET], true),
+      exceptionRules: readSheetData(sheetMap[RULES_SHEET]),
+      departments: readSheetData(sheetMap[DEPTS_SHEET]),
+      customers: readSheetData(sheetMap[CUSTS_SHEET]),
+      products: readSheetData(sheetMap[PRODS_SHEET]),
+      sites: readSheetData(sheetMap[SITES_SHEET]),
+      learnedRules: readSheetData(sheetMap[LEARNED_SHEET])
     };
     return createJsonResponse(data);
   }
@@ -58,27 +73,31 @@ function doPost(e) {
   try {
     const postData = JSON.parse(e.postData.contents);
     const action = postData.action;
+    const ss = getSpreadsheet();
+    if (!ss) {
+      return createJsonResponse({ success: false, error: "Không tìm thấy Spreadsheet." });
+    }
     
     if (action === 'save_all') {
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
       initializeSheets(ss, [CONFIG_SHEET, RULES_SHEET, DEPTS_SHEET, CUSTS_SHEET, PRODS_SHEET, SITES_SHEET, LEARNED_SHEET]);
+      const sheetMap = getSheetMap(ss);
       
-      if (postData.config) writeSheetData(ss.getSheetByName(CONFIG_SHEET), postData.config, true);
-      if (postData.exceptionRules) writeSheetData(ss.getSheetByName(RULES_SHEET), postData.exceptionRules);
-      if (postData.departments) writeSheetData(ss.getSheetByName(DEPTS_SHEET), postData.departments);
-      if (postData.customers) writeSheetData(ss.getSheetByName(CUSTS_SHEET), postData.customers);
-      if (postData.products) writeSheetData(ss.getSheetByName(PRODS_SHEET), postData.products);
-      if (postData.sites) writeSheetData(ss.getSheetByName(SITES_SHEET), postData.sites);
-      if (postData.learnedRules) writeSheetData(ss.getSheetByName(LEARNED_SHEET), postData.learnedRules);
+      if (postData.config) writeSheetData(sheetMap[CONFIG_SHEET], postData.config, true);
+      if (postData.exceptionRules) writeSheetData(sheetMap[RULES_SHEET], postData.exceptionRules);
+      if (postData.departments) writeSheetData(sheetMap[DEPTS_SHEET], postData.departments);
+      if (postData.customers) writeSheetData(sheetMap[CUSTS_SHEET], postData.customers);
+      if (postData.products) writeSheetData(sheetMap[PRODS_SHEET], postData.products);
+      if (postData.sites) writeSheetData(sheetMap[SITES_SHEET], postData.sites);
+      if (postData.learnedRules) writeSheetData(sheetMap[LEARNED_SHEET], postData.learnedRules);
       
       return createJsonResponse({ success: true, message: "Sync successful" });
     }
     
     if (action === 'log') {
-      const ssLog = getSpreadsheet();
-      initializeSheets(ssLog, [LOGS_SHEET]);
-      const logsSheet = ssLog.getSheetByName(LOGS_SHEET);
-      if (logsSheet.getLastRow() === 0) {
+      initializeSheets(ss, [LOGS_SHEET]);
+      const sheetMap = getSheetMap(ss);
+      const logsSheet = sheetMap[LOGS_SHEET];
+      if (logsSheet && logsSheet.getLastRow() === 0) {
         logsSheet.appendRow(["Timestamp", "User", "Action", "Details"]);
       }
       let timezone = "GMT+7";
@@ -86,12 +105,14 @@ function doPost(e) {
         timezone = Session.getScriptTimeZone() || "GMT+7";
       } catch(e) {}
       const timestamp = Utilities.formatDate(new Date(), timezone, "yyyy-MM-dd HH:mm:ss");
-      logsSheet.appendRow([
-        timestamp,
-        postData.user || "",
-        postData.actionName || "",
-        postData.actionDetails || ""
-      ]);
+      if (logsSheet) {
+        logsSheet.appendRow([
+          timestamp,
+          postData.user || "",
+          postData.actionName || "",
+          postData.actionDetails || ""
+        ]);
+      }
       return createJsonResponse({ success: true, message: "Log success" });
     }
   } catch (err) {
@@ -102,21 +123,22 @@ function doPost(e) {
 
 // Khởi tạo các Sheet nếu chưa tồn tại
 function initializeSheets(ss, sheetNames) {
+  const existingMap = getSheetMap(ss);
   sheetNames.forEach(name => {
-    if (!ss.getSheetByName(name)) {
-      ss.insertSheet(name);
+    if (!existingMap[name]) {
+      const created = ss.insertSheet(name);
+      existingMap[name] = created;
     }
   });
 }
 
-// Hàm đọc dữ liệu nhanh từ Sheet thành mảng JSON Object
+// Hàm đọc dữ liệu nhanh từ Sheet thành mảng JSON Object (tối ưu hóa 1 lần getRange)
 function readSheetData(sheet, isKeyValue = false) {
   if (!sheet) return isKeyValue ? {} : [];
-  const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
-  if (lastRow < 2) return isKeyValue ? {} : []; // Chỉ có header hoặc trống
+  const range = sheet.getDataRange();
+  const values = range.getValues();
+  if (!values || values.length < 2) return isKeyValue ? {} : []; // Chỉ có header hoặc trống
   
-  const values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   const headers = values[0];
   
   if (isKeyValue) {
@@ -124,7 +146,6 @@ function readSheetData(sheet, isKeyValue = false) {
     for (let i = 1; i < values.length; i++) {
       const key = values[i][0];
       let val = values[i][1];
-      // Thử parse JSON cho các mảng hoặc object
       try {
         if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
           val = JSON.parse(val);

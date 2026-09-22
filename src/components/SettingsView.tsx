@@ -7,13 +7,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   Settings, Save, Check, FileDown, ShieldAlert, Cpu, 
   Trash2, Plus, Edit, Database, FileSpreadsheet, AlertCircle, 
-  CheckCircle, FileUp, X, ChevronDown, ChevronUp, RefreshCw, Sparkles, Search 
+  CheckCircle, FileUp, X, ChevronDown, ChevronUp, RefreshCw, Sparkles, Search,
+  Cloud, Download, Upload
 } from 'lucide-react';
 import { 
-  ContractSettings, ExceptionRule, DepartmentMaster, CustomerMaster, ProductMaster 
+  ContractSettings, ExceptionRule, DepartmentMaster, CustomerMaster, ProductMaster, LearnedRule 
 } from '../types';
 import { downloadTemplate, parseExcelFile } from '../utils/excel';
-import { dbService, hasValidGoogleSheetsUrl } from '../services/dbService';
+import { dbService, hasValidGoogleSheetsUrl, GOOGLE_SHEETS_SCRIPT_URL } from '../services/dbService';
 import ConfirmModal from './ConfirmModal';
 
 interface SettingsViewProps {
@@ -62,9 +63,12 @@ export default function SettingsView({
   // Activity Logging config states
   const [logsEnabled, setLogsEnabled] = useState(config.logsEnabled !== false);
   const [userName, setUserName] = useState(config.userName || 'Kế toán viên');
-  const [googleSheetsUrl, setGoogleSheetsUrlState] = useState(config.googleSheetsUrl || '');
+  const [googleSheetsUrl, setGoogleSheetsUrlState] = useState(
+    config.googleSheetsUrl || localStorage.getItem('google_sheets_url') || GOOGLE_SHEETS_SCRIPT_URL || ''
+  );
   
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [urlSaveSuccess, setUrlSaveSuccess] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<{ title: string; message: string; type?: 'info' | 'warning' | 'danger'; onConfirm: () => void } | null>(null);
 
   // Exceptions rules states
@@ -77,14 +81,16 @@ export default function SettingsView({
   const [departments, setDepartments] = useState<DepartmentMaster[]>([]);
   const [customers, setCustomers] = useState<CustomerMaster[]>([]);
   const [products, setProducts] = useState<ProductMaster[]>([]);
+  const [learnedRules, setLearnedRules] = useState<LearnedRule[]>([]);
 
   // Expand states for previewing the Master Data
-  const [expandedMaster, setExpandedMaster] = useState<'bophan' | 'khach' | 'sanpham' | null>(null);
+  const [expandedMaster, setExpandedMaster] = useState<'bophan' | 'khach' | 'sanpham' | 'learned' | null>(null);
 
   // Search term states for each Master table
   const [searchTermDept, setSearchTermDept] = useState('');
   const [searchTermCust, setSearchTermCust] = useState('');
   const [searchTermProd, setSearchTermProd] = useState('');
+  const [searchTermLearned, setSearchTermLearned] = useState('');
 
   // Upload/Parse feedback states
   const [uploadFeedback, setUploadFeedback] = useState<{
@@ -97,18 +103,60 @@ export default function SettingsView({
     const depts = await dbService.getDepartments();
     const custs = await dbService.getCustomers();
     const prods = await dbService.getProducts();
+    const lr = await dbService.getLearnedRules();
     setDepartments(depts);
     setCustomers(custs);
     setProducts(prods);
+    setLearnedRules(lr);
+  };
+
+  const handleDeleteLearnedRule = async (ruleId: string) => {
+    await dbService.deleteLearnedRule(ruleId);
+    const updated = await dbService.getLearnedRules();
+    setLearnedRules(updated);
+  };
+
+  const handleClearAllLearnedRules = () => {
+    setConfirmConfig({
+      title: 'Xác nhận xóa tất cả bài học',
+      message: 'Bạn có chắc chắn muốn xóa toàn bộ các quy tắc máy học (Learned Rules) hiện tại không? Sau khi xóa, bạn có thể bấm "Đẩy lên (Push)" để xóa sạch trên Google Sheet hoặc bấm "Đồng bộ Sheet" để cập nhật.',
+      type: 'danger',
+      onConfirm: async () => {
+        await dbService.saveLearnedRules([]);
+        setLearnedRules([]);
+      }
+    });
   };
 
   const [showGasInstructions, setShowGasInstructions] = useState(false);
   const [showSyncSuccess, setShowSyncSuccess] = useState(false);
   const [syncLocalError, setSyncLocalError] = useState<string | null>(null);
 
+  const handleSaveGoogleSheetsUrl = (urlToSave?: string) => {
+    const targetUrl = (typeof urlToSave === 'string' ? urlToSave : googleSheetsUrl).trim();
+    const raw = localStorage.getItem('app_contract_settings');
+    let currentSettings: any = {};
+    if (raw) {
+      try {
+        currentSettings = JSON.parse(raw);
+      } catch (e) {}
+    }
+    const updated: ContractSettings = {
+      ...config,
+      ...currentSettings,
+      googleSheetsUrl: targetUrl,
+    };
+    localStorage.setItem('app_contract_settings', JSON.stringify(updated));
+    localStorage.setItem('google_sheets_url', targetUrl);
+    onSaveConfig(updated);
+    setUrlSaveSuccess(true);
+    setTimeout(() => setUrlSaveSuccess(false), 3000);
+  };
+
   const handlePullGoogleSheets = async () => {
     if (!onManualPull) return;
     setSyncLocalError(null);
+    handleSaveGoogleSheetsUrl();
     try {
       await onManualPull();
       await loadMasters();
@@ -121,6 +169,7 @@ export default function SettingsView({
 
   const handlePushGoogleSheets = async () => {
     if (!onManualPush) return;
+    handleSaveGoogleSheetsUrl();
     
     const action = async () => {
       setSyncLocalError(null);
@@ -134,6 +183,9 @@ export default function SettingsView({
           contractSuffix,
           contractNameSeparator,
           exceptionRules,
+          logsEnabled,
+          userName,
+          googleSheetsUrl: googleSheetsUrl.trim(),
         });
         setShowSyncSuccess(true);
         setTimeout(() => setShowSyncSuccess(false), 3000);
@@ -828,6 +880,33 @@ export default function SettingsView({
                   </span>
                 )}
               </li>
+
+              {/* 4. Learned Rules check */}
+              <li className="flex items-center justify-between p-3 rounded-lg bg-slate-800/40 border border-slate-800/60">
+                <div>
+                  <span className="block font-semibold">4. Quy tắc máy học (Learned Rules)</span>
+                  <span className="text-[10px] text-slate-400 font-mono">Các bài học tự động ghi nhớ khi xuất tệp</span>
+                </div>
+                {learnedRules.length > 0 ? (
+                  <div className="flex items-center space-x-2">
+                    <span className="px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/30 text-[10px] font-bold font-mono">
+                      Đã học {learnedRules.length} quy tắc
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleClearAllLearnedRules}
+                      className="px-2 py-0.5 rounded bg-rose-900/50 hover:bg-rose-900 text-rose-300 border border-rose-700/60 text-[10px] font-bold transition cursor-pointer"
+                      title="Xóa toàn bộ quy tắc máy học hiện tại"
+                    >
+                      Xóa sạch
+                    </button>
+                  </div>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-slate-700/40 text-slate-400 border border-slate-700 text-[10px] font-bold font-mono">
+                    0 quy tắc
+                  </span>
+                )}
+              </li>
             </ul>
           </div>
 
@@ -840,6 +919,93 @@ export default function SettingsView({
               <li>Dùng nút <strong>Nạp File mới</strong> ở từng loại Master mục số 3 bên dưới để load dữ liệu vào.</li>
               <li>Hệ thống tự động sử dụng bảng master này để chuẩn hóa tự động các tệp hạch toán.</li>
             </ol>
+          </div>
+
+          {/* Google Sheets Sync Card */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center space-x-2">
+                <Cloud className="h-5 w-5 text-indigo-500" />
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                  Đồng bộ Google Sheets (Cloud)
+                </h4>
+              </div>
+              {lastSynced && (
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Lần cuối: {lastSynced}
+                </span>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">
+                  URL Google Apps Script Web App
+                </label>
+                {urlSaveSuccess && (
+                  <span className="text-[11px] font-bold text-emerald-600 flex items-center space-x-1">
+                    <Check className="h-3.5 w-3.5 inline" />
+                    <span>Đã lưu URL!</span>
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={googleSheetsUrl}
+                  onChange={(e) => setGoogleSheetsUrlState(e.target.value)}
+                  onBlur={() => handleSaveGoogleSheetsUrl()}
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  className="flex-1 text-xs px-3 py-2 border border-slate-300 rounded-lg text-slate-800 font-mono placeholder-slate-400 focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSaveGoogleSheetsUrl()}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer flex items-center space-x-1 shrink-0"
+                  title="Lưu URL Web App vào cấu hình"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  <span>Lưu URL</span>
+                </button>
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                URL Web App triển khai từ tệp <code>google_apps_script.js</code>
+              </span>
+            </div>
+
+            {syncLocalError && (
+              <div className="p-2.5 bg-rose-50 text-rose-700 text-xs rounded-lg border border-rose-200 flex items-center space-x-1.5">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 text-rose-500" />
+                <span>{syncLocalError}</span>
+              </div>
+            )}
+            {showSyncSuccess && (
+              <div className="p-2.5 bg-emerald-50 text-emerald-700 text-xs rounded-lg border border-emerald-200 flex items-center space-x-1.5">
+                <Check className="h-4 w-4 flex-shrink-0 text-emerald-500" />
+                <span>Đồng bộ thành công!</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handlePullGoogleSheets}
+                disabled={isSyncing}
+                className="flex items-center justify-center space-x-1 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-200 transition cursor-pointer disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Tải về (Pull)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePushGoogleSheets}
+                disabled={isSyncing}
+                className="flex items-center justify-center space-x-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                <span>Đẩy lên (Push)</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1258,6 +1424,156 @@ export default function SettingsView({
                         <td className="px-4 py-2 font-mono text-right text-slate-500">{prod.thueSuat !== undefined && prod.thueSuat !== '' ? `${prod.thueSuat}%` : 'Mặc định'}</td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 4. MASTER 4: LEARNED RULES (QUY TẮC MÁY HỌC) */}
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+          <div className="p-4.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-bold text-slate-800 uppercase tracking-wider font-mono">Master 4: Danh sách quy tắc máy học (Learned Rules)</span>
+                {learnedRules.length > 0 ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 font-mono">
+                    {learnedRules.length} quy tắc
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-600 font-mono">
+                    0 quy tắc
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Các quy tắc tự động học được từ thao tác sửa tay của kế toán khi xuất file HĐ mới / HĐ cũ.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2 shrink-0">
+              {learnedRules.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllLearnedRules}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg transition flex items-center space-x-1.5 cursor-pointer"
+                  title="Xóa tất cả các quy tắc đã học"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                  <span>Xóa tất cả</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setExpandedMaster(expandedMaster === 'learned' ? null : 'learned')}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg transition flex items-center space-x-1.5 cursor-pointer"
+              >
+                {expandedMaster === 'learned' ? (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    <span>Thu gọn</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    <span>Xem danh sách ({learnedRules.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Search bar inside expanded block */}
+          {expandedMaster === 'learned' && learnedRules.length > 0 && (
+            <div className="p-3 bg-slate-50/50 border-b border-slate-150">
+              <div className="relative max-w-sm">
+                <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Tìm theo từ khóa, cụm từ gốc, mã vụ việc..."
+                  value={searchTermLearned}
+                  onChange={(e) => setSearchTermLearned(e.target.value)}
+                  className="w-full text-xs pl-8 pr-7 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                {searchTermLearned && (
+                  <button type="button" onClick={() => setSearchTermLearned('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Table of learned rules */}
+          {expandedMaster === 'learned' && (
+            <div className="p-4 overflow-x-auto max-h-[350px]">
+              {learnedRules.length === 0 ? (
+                <div className="py-8 px-4 text-center text-slate-400 italic">
+                  Chưa có quy tắc máy học nào. Khi bạn sửa tay trên Bảng kê và bấm "Xuất HĐ", hệ thống sẽ tự động học và hiển thị tại đây.
+                </div>
+              ) : (
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="px-4 py-2 text-slate-700 font-semibold w-10 text-center">STT</th>
+                      <th className="px-4 py-2 text-slate-700 font-semibold">Cụm từ gốc (Pattern)</th>
+                      <th className="px-4 py-2 text-slate-700 font-semibold">Từ khóa học (Keywords)</th>
+                      <th className="px-4 py-2 text-slate-700 font-semibold">Mã Vụ việc</th>
+                      <th className="px-4 py-2 text-slate-700 font-semibold">Tên sản phẩm</th>
+                      <th className="px-4 py-2 text-slate-700 font-semibold text-center w-16">Lần dùng</th>
+                      <th className="px-4 py-2 text-slate-700 font-semibold text-right w-20">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {learnedRules
+                      .filter(r => {
+                        if (!searchTermLearned.trim()) return true;
+                        const q = stripVietnameseDiacritics(searchTermLearned);
+                        return (
+                          stripVietnameseDiacritics(r.rawContentPattern).includes(q) ||
+                          stripVietnameseDiacritics(r.maVuViec).includes(q) ||
+                          stripVietnameseDiacritics(r.tenSanPham || '').includes(q) ||
+                          (r.keywords && r.keywords.some(k => stripVietnameseDiacritics(k).includes(q))) ||
+                          (r.keyword && stripVietnameseDiacritics(r.keyword).includes(q))
+                        );
+                      })
+                      .map((rule, idx) => (
+                        <tr key={rule.id} className="hover:bg-slate-50/50">
+                          <td className="px-4 py-2 text-center text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="px-4 py-2 text-slate-800 font-mono text-[11px] max-w-xs truncate" title={rule.rawContentPattern}>{rule.rawContentPattern}</td>
+                          <td className="px-4 py-2">
+                            {rule.keywords && rule.keywords.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {rule.keywords.map((kw, i) => (
+                                  <span key={i} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold">
+                                    {kw}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : rule.keyword ? (
+                              <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold">
+                                {rule.keyword}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic text-[10px]">Tất cả</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 font-mono text-indigo-650 font-bold">{rule.maVuViec}</td>
+                          <td className="px-4 py-2 text-slate-800 font-medium">{rule.tenSanPham}</td>
+                          <td className="px-4 py-2 font-mono text-center text-slate-500">{rule.useCount || 1}</td>
+                          <td className="px-4 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteLearnedRule(rule.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                              title="Xóa quy tắc này"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 inline" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               )}

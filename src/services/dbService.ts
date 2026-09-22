@@ -147,11 +147,20 @@ class LocalStorageMasterDataService implements IMasterDataService {
   async upsertLearnedRule(ruleInput: Omit<LearnedRule, 'id' | 'createdAt' | 'updatedAt' | 'useCount'>): Promise<void> {
     const rules = await this.getLearnedRules();
     const normPattern = normalizeText(ruleInput.rawContentPattern);
+    const inputKeywords = (ruleInput.keywords && ruleInput.keywords.length > 0)
+      ? ruleInput.keywords
+      : (ruleInput.keyword ? [ruleInput.keyword] : []);
+    const normKwsJoined = inputKeywords.map(k => normalizeText(k)).sort().join('|');
     const now = new Date().toISOString();
 
-    // Tìm xem đã có rule với cùng pattern và điều kiện danh mục/ĐVT hay chưa
+    // Tìm xem đã có rule với cùng keywords/pattern và điều kiện danh mục/ĐVT hay chưa
     const existingIndex = rules.findIndex(r => {
-      const matchPattern = normalizeText(r.rawContentPattern) === normPattern;
+      const rKws = (r.keywords && r.keywords.length > 0) ? r.keywords : (r.keyword ? [r.keyword] : []);
+      const rKwsJoined = rKws.map(k => normalizeText(k)).sort().join('|');
+
+      const matchPattern = normKwsJoined && rKwsJoined
+        ? rKwsJoined === normKwsJoined
+        : normalizeText(r.rawContentPattern) === normPattern;
       const matchCategory = (!r.chuyenTrang && !ruleInput.chuyenTrang) || (r.chuyenTrang === ruleInput.chuyenTrang);
       const matchDvt = (!r.donViTinh && !ruleInput.donViTinh) || (r.donViTinh === ruleInput.donViTinh);
       return matchPattern && matchCategory && matchDvt;
@@ -160,6 +169,8 @@ class LocalStorageMasterDataService implements IMasterDataService {
     if (existingIndex >= 0) {
       rules[existingIndex].maVuViec = ruleInput.maVuViec;
       rules[existingIndex].tenSanPham = ruleInput.tenSanPham;
+      if (ruleInput.keyword) rules[existingIndex].keyword = ruleInput.keyword;
+      if (ruleInput.keywords) rules[existingIndex].keywords = ruleInput.keywords;
       if (ruleInput.tkDoanhThu) rules[existingIndex].tkDoanhThu = ruleInput.tkDoanhThu;
       rules[existingIndex].useCount = (rules[existingIndex].useCount || 0) + 1;
       rules[existingIndex].updatedAt = now;
@@ -202,11 +213,19 @@ export const GOOGLE_SHEETS_SCRIPT_URL = "https://script.google.com/macros/s/AKfy
  * Lấy URL Google Sheets Script hiện tại (ưu tiên từ config lưu trong localStorage)
  */
 export function getGoogleSheetsUrl(): string {
+  const direct = localStorage.getItem('google_sheets_url');
+  if (direct && typeof direct === 'string' && direct.trim().startsWith('http')) {
+    return direct.trim();
+  }
   const raw = localStorage.getItem('app_contract_settings');
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
-      if (parsed.googleSheetsUrl && typeof parsed.googleSheetsUrl === 'string' && parsed.googleSheetsUrl.trim().startsWith('http')) {
+      if (
+        parsed.googleSheetsUrl && 
+        typeof parsed.googleSheetsUrl === 'string' && 
+        parsed.googleSheetsUrl.trim().startsWith('http')
+      ) {
         return parsed.googleSheetsUrl.trim();
       }
     } catch (e) {}
@@ -273,11 +292,12 @@ export async function pullAllFromGoogleSheets(): Promise<{
       try { localConfig = JSON.parse(rawLocalConfig); } catch (e) {}
     }
     
-    // Gộp cấu hình từ Google Sheets, loại bỏ userName để tránh bị đè tên người dùng local
-    const { userName: sheetUserName, ...configFromSheet } = data.config || {};
+    // Gộp cấu hình từ Google Sheets, loại bỏ userName và googleSheetsUrl để tránh bị đè URL và tên người dùng local
+    const { userName: sheetUserName, googleSheetsUrl: sheetGoogleSheetsUrl, ...configFromSheet } = data.config || {};
     const mergedConfig = {
       ...localConfig,
       ...configFromSheet,
+      googleSheetsUrl: (localConfig as any).googleSheetsUrl || getGoogleSheetsUrl(),
     };
     
     // Nếu có exception rules từ Google Sheet, ưu tiên đè lên
@@ -336,11 +356,17 @@ export async function pullAllFromGoogleSheets(): Promise<{
     await dbService.saveSites(formatted);
   }
 
-  // 6. Lưu Learned Rules
+  // 6. Lưu Learned Rules (Đồng bộ trực tiếp từ Google Sheets, nếu Sheet đã xóa sạch thì cập nhật sạch)
   if (Array.isArray(data.learnedRules)) {
     const formatted: LearnedRule[] = data.learnedRules.map((r: any) => ({
       id: String(r.id || ('lr_' + Math.random().toString(36).substring(2, 7))),
       rawContentPattern: String(r.rawContentPattern || '').trim(),
+      keyword: r.keyword ? String(r.keyword).trim() : undefined,
+      keywords: Array.isArray(r.keywords) 
+        ? r.keywords 
+        : (typeof r.keywords === 'string' && r.keywords.startsWith('[')
+            ? (() => { try { return JSON.parse(r.keywords); } catch(e) { return [r.keywords]; } })()
+            : (r.keyword ? [String(r.keyword).trim()] : undefined)),
       chuyenTrang: r.chuyenTrang ? String(r.chuyenTrang).trim() : undefined,
       donViTinh: r.donViTinh ? String(r.donViTinh).trim() : undefined,
       maVuViec: String(r.maVuViec || '').trim(),
@@ -431,7 +457,6 @@ export async function writeActionLogToSheet(
   const raw = localStorage.getItem('app_contract_settings');
   let logsEnabled = true;
   let userName = "Kế toán viên";
-  let webAppUrl = GOOGLE_SHEETS_SCRIPT_URL;
 
   if (raw) {
     try {
@@ -442,13 +467,11 @@ export async function writeActionLogToSheet(
       if (parsed.userName) {
         userName = String(parsed.userName).trim();
       }
-      if (parsed.googleSheetsUrl && typeof parsed.googleSheetsUrl === 'string' && parsed.googleSheetsUrl.trim().startsWith('http')) {
-        webAppUrl = parsed.googleSheetsUrl.trim();
-      }
     } catch (e) {}
   }
 
-  if (!logsEnabled || !webAppUrl || !webAppUrl.startsWith('http')) {
+  const webAppUrl = getGoogleSheetsUrl();
+  if (!logsEnabled || !hasValidGoogleSheetsUrl() || !webAppUrl) {
     return;
   }
 

@@ -59,6 +59,34 @@ export function buildFastContractLookup(rows: any[]): Map<string, FastContractLo
   return lookup;
 }
 
+/**
+ * Bóc tách chuỗi diễn giải/chuyên trang thành các cụm từ khóa tiềm năng (Tag pills)
+ * để người dùng click 1 chạm chọn từ khóa quyết định dạy máy.
+ */
+export function extractCandidateKeywords(text: string): string[] {
+  if (!text || typeof text !== 'string') return [];
+  const clean = text.trim();
+  if (!clean) return [];
+
+  // Tách theo các dấu phân cách phổ biến
+  const rawParts = clean.split(/[-–—/\\,;:+|]/);
+  const candidates: string[] = [];
+
+  for (const part of rawParts) {
+    const trimmed = part.trim();
+    if (trimmed.length >= 2 && !candidates.includes(trimmed)) {
+      candidates.push(trimmed);
+    }
+  }
+
+  // Thêm toàn bộ chuỗi gốc nếu có nhiều hơn 1 cụm
+  if (candidates.length > 1 && !candidates.includes(clean)) {
+    candidates.push(clean);
+  }
+
+  return candidates.length > 0 ? candidates : [clean];
+}
+
 export function lookupFastContractByBooking(
   lookup: Map<string, FastContractLookupValue>,
   maBooking: string
@@ -300,7 +328,7 @@ export function matchProductAdvanced(
     for (const lr of learnedRules) {
       const pattern = lr.rawContentPattern || (lr as any).originalText || (lr as any).normalizedKey || '';
       const normLR = normalizeText(pattern);
-      if (!normLR) continue;
+      const kw = lr.keyword ? normalizeText(lr.keyword) : '';
 
       // Kiểm tra thêm điều kiện ĐVT nếu rule có chỉ định ĐVT
       if (lr.donViTinh && donViTinh) {
@@ -309,9 +337,20 @@ export function matchProductAdvanced(
         if (normDvtRule !== normDvtInput) continue;
       }
 
-      if (normInput === normLR || (normLR.length >= 6 && normInput.includes(normLR))) {
+      const ruleKeywords = (lr.keywords && lr.keywords.length > 0)
+        ? lr.keywords
+        : (lr.keyword ? [lr.keyword] : []);
+      
+      const isKeywordsMatched = ruleKeywords.length > 0 && ruleKeywords.every(k => {
+        const nk = normalizeText(k);
+        return nk.length >= 2 && (normInput === nk || normInput.includes(nk));
+      });
+      const isPatternMatched = normLR && (normInput === normLR || (normLR.length >= 6 && normInput.includes(normLR)));
+
+      if (isKeywordsMatched || isPatternMatched) {
+        const matchedKw = ruleKeywords.length > 0 ? ruleKeywords.join(' + ') : pattern;
         const syntheticProd: ProductMaster = {
-          keyword: pattern,
+          keyword: matchedKw,
           maVuViec: lr.maVuViec,
           tenSanPham: lr.tenSanPham,
           tkDoanhThu: lr.tkDoanhThu || '51133',
@@ -319,10 +358,10 @@ export function matchProductAdvanced(
         };
         return {
           bestMatch: syntheticProd,
-          candidates: [{ product: syntheticProd, score: 100, matchedKeyword: pattern }],
+          candidates: [{ product: syntheticProd, score: 100, matchedKeyword: matchedKw }],
           confidenceScore: 100,
           status: 'OK',
-          matchedKeyword: pattern,
+          matchedKeyword: matchedKw,
           maVV: lr.maVuViec,
           tenSanPham: lr.tenSanPham,
           tkDoanhThu: lr.tkDoanhThu || '51133',
