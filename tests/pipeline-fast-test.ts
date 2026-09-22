@@ -31,6 +31,10 @@ const filesToTest = [
 
 for (const item of filesToTest) {
   const filePath = path.join(formDir, item.fileName);
+  if (!fs.existsSync(filePath)) {
+    console.log(`⚠️ Bỏ qua test pipeline file ${item.fileName} (không tìm thấy trong Form/)`);
+    continue;
+  }
   const buffer = fs.readFileSync(filePath);
   const workbook = XLSX.read(buffer, {
     type: 'buffer',

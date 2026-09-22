@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   AppTab,
   ContractSettings
@@ -63,33 +63,43 @@ const DEFAULT_CONFIG: ContractSettings = {
   exceptionRules: DEFAULT_RULES,
   logsEnabled: true,
   userName: 'Kế toán viên',
-  googleSheetsUrl: 'https://script.google.com/macros/s/AKfycbx6l4gM4WbIxaoCJDMpztCpzzIuCiZ7m38wEZdSMI2IjLPNv4bhCs7n1tzgQafomSER/exec',
+  googleSheetsUrl: GOOGLE_SHEETS_SCRIPT_URL,
 };
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.LUAN_CHUYEN);
-  const [headerActions, setHeaderActions] = useState<React.ReactNode>(null);
+  const [headerActionsMap, setHeaderActionsMap] = useState<Partial<Record<AppTab, React.ReactNode>>>({});
+
+  const setLuanChuyenHeader = useCallback((actions: React.ReactNode) => {
+    setHeaderActionsMap(prev => prev[AppTab.LUAN_CHUYEN] === actions ? prev : ({ ...prev, [AppTab.LUAN_CHUYEN]: actions }));
+  }, []);
+  const setHopDongMoiHeader = useCallback((actions: React.ReactNode) => {
+    setHeaderActionsMap(prev => prev[AppTab.HOP_DONG_MOI] === actions ? prev : ({ ...prev, [AppTab.HOP_DONG_MOI]: actions }));
+  }, []);
+  const setBangKeHeader = useCallback((actions: React.ReactNode) => {
+    setHeaderActionsMap(prev => prev[AppTab.BANG_KE] === actions ? prev : ({ ...prev, [AppTab.BANG_KE]: actions }));
+  }, []);
+
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
   const [config, setConfig] = useState<ContractSettings>(() => {
     const raw = localStorage.getItem('app_contract_settings');
+    const dedicatedUrl = localStorage.getItem('google_sheets_url') || '';
+    const activeUrl = dedicatedUrl || GOOGLE_SHEETS_SCRIPT_URL;
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        if (!parsed.googleSheetsUrl || parsed.googleSheetsUrl.trim() === '') {
-          parsed.googleSheetsUrl = 'https://script.google.com/macros/s/AKfycbx6l4gM4WbIxaoCJDMpztCpzzIuCiZ7m38wEZdSMI2IjLPNv4bhCs7n1tzgQafomSER/exec';
-          localStorage.setItem('app_contract_settings', JSON.stringify(parsed));
-        }
         return {
           ...DEFAULT_CONFIG,
           ...parsed,
+          googleSheetsUrl: parsed.googleSheetsUrl || activeUrl,
         };
       } catch {
-        return DEFAULT_CONFIG;
+        return { ...DEFAULT_CONFIG, googleSheetsUrl: activeUrl };
       }
     }
-    const initConfig = { ...DEFAULT_CONFIG };
+    const initConfig = { ...DEFAULT_CONFIG, googleSheetsUrl: activeUrl };
     localStorage.setItem('app_contract_settings', JSON.stringify(initConfig));
     return initConfig;
   });
@@ -169,10 +179,12 @@ export default function App() {
     setConfig(prev => ({ ...prev, userName: 'Kế toán viên' }));
   };
 
-  // Tự động tải ngầm dữ liệu từ Google Sheets khi mở app
+  // Tự động tải ngầm dữ liệu từ Google Sheets khi mở app / refresh trang
   useEffect(() => {
     const autoSync = async () => {
       if (hasValidGoogleSheetsUrl()) {
+        // Xóa sạch bài học tạm thời ở Local trước khi pull để chỉ giữ đúng những gì đang có trên Google Sheet
+        localStorage.removeItem('app_learned_rules');
         setIsSyncing(true);
         setSyncError(null);
         try {
@@ -189,8 +201,9 @@ export default function App() {
             } catch (e) {}
           }
           
-          setSyncSuccessMsg(`Tự động đồng bộ ngầm thành công lúc ${timeStr}! (KH: ${stats.customersCount} dòng)`);
-          setTimeout(() => setSyncSuccessMsg(null), 6000);
+          setSyncSuccessMsg(`Tự động đồng bộ thành công lúc ${timeStr}! (${stats.customersCount} KH, ${stats.learnedRulesCount} quy tắc máy học)`);
+          setTimeout(() => setSyncSuccessMsg(null), 5000);
+          writeActionLogToSheet("Tự động đồng bộ", `Khởi động ứng dụng: Đã đồng bộ ${stats.learnedRulesCount} quy tắc máy học từ Google Sheets.`);
         } catch (err: any) {
           console.error("Lỗi đồng bộ Google Sheets tự động:", err);
           setSyncError(err?.message || "Lỗi đồng bộ tự động");
@@ -203,6 +216,13 @@ export default function App() {
   }, []);
 
   const handleManualPull = async () => {
+    if (!hasValidGoogleSheetsUrl()) {
+      setSyncError("Chưa cấu hình URL Google Sheets hợp lệ trong Setup");
+      setTimeout(() => setSyncError(null), 4000);
+      return;
+    }
+    // Xóa sạch bài học tạm thời ở Local trước khi pull để đồng bộ chuẩn xác từ Sheet
+    localStorage.removeItem('app_learned_rules');
     setIsSyncing(true);
     setSyncError(null);
     setSyncSuccessMsg(null);
@@ -219,14 +239,13 @@ export default function App() {
         } catch (e) {}
       }
       
-      setSyncSuccessMsg(`Đồng bộ thành công! Đã nạp ${stats.customersCount} khách hàng, ${stats.departmentsCount} bộ phận, ${stats.productsCount} sản phẩm.`);
+      setSyncSuccessMsg(`Đồng bộ thành công! Đã nạp ${stats.customersCount} khách hàng, ${stats.departmentsCount} bộ phận, ${stats.productsCount} sản phẩm, ${stats.learnedRulesCount} quy tắc máy học.`);
       setTimeout(() => setSyncSuccessMsg(null), 5000);
-      writeActionLogToSheet("Đồng bộ tải (Pull)", `Đồng bộ thủ công thành công từ Google Sheets: Nạp ${stats.customersCount} khách hàng, ${stats.departmentsCount} bộ phận, ${stats.productsCount} sản phẩm.`);
+      writeActionLogToSheet("Đồng bộ tải (Pull)", `Đồng bộ thủ công thành công từ Google Sheets: Nạp ${stats.customersCount} khách hàng, ${stats.departmentsCount} bộ phận, ${stats.productsCount} sản phẩm, ${stats.learnedRulesCount} quy tắc máy học.`);
       return stats;
     } catch (err: any) {
       setSyncError(err?.message || "Lỗi khi tải dữ liệu từ Sheet");
       writeActionLogToSheet("Đồng bộ tải (Pull) thất bại", `Lỗi: ${err?.message || "Không rõ nguyên nhân"}`);
-      throw err;
     } finally {
       setIsSyncing(false);
     }
@@ -257,12 +276,6 @@ export default function App() {
     setConfig(updated);
     localStorage.setItem('app_contract_settings', JSON.stringify(updated));
     writeActionLogToSheet("Lưu cấu hình", "Cập nhật tham số chung của hệ thống.");
-    // Tự động đẩy lên Google Sheet nếu có URL cấu hình
-    if (hasValidGoogleSheetsUrl()) {
-      handleManualPush(updated).catch(err => {
-        console.error("Auto-push config thất bại:", err);
-      });
-    }
   };
 
   const toggleSidebar = () => {
@@ -450,29 +463,43 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3">
-            {(activeTab === AppTab.LUAN_CHUYEN || activeTab === AppTab.HOP_DONG_MOI || activeTab === AppTab.BANG_KE) && headerActions}
+            {headerActionsMap[activeTab]}
 
-            {isSyncing && (
-              <span className="flex items-center space-x-1.5 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-100 animate-pulse">
-                <RefreshCw className="h-3 w-3 animate-spin text-indigo-600" />
-                <span>Đang đồng bộ...</span>
-              </span>
-            )}
+            {/* Nút bấm Đồng bộ Sheet */}
+            <button
+              type="button"
+              onClick={handleManualPull}
+              disabled={isSyncing}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-2xs border cursor-pointer disabled:opacity-60 ${
+                syncError
+                  ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                  : 'bg-white hover:bg-slate-50 text-indigo-600 hover:text-indigo-700 border-slate-200 hover:border-indigo-300'
+              }`}
+              title={
+                syncError
+                  ? `Lỗi: ${syncError}. Nhấp để thử đồng bộ lại`
+                  : lastSynced
+                  ? `Đã đồng bộ lúc: ${lastSynced}. Nhấp để tải lại dữ liệu mới nhất từ Google Sheets`
+                  : 'Nhấn để đồng bộ dữ liệu với Google Sheets'
+              }
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin text-indigo-600' : syncError ? 'text-rose-500' : 'text-indigo-500'}`} />
+              <span>{isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ Sheet'}</span>
+              {lastSynced && !isSyncing && !syncError && (
+                <span className="text-[10px] text-slate-400 font-mono font-normal">({lastSynced})</span>
+              )}
+            </button>
+
             {syncError && (
-              <span className="flex items-center space-x-1.5 bg-rose-50 text-rose-750 px-3 py-1 rounded-full text-xs font-semibold border border-rose-150" title={syncError}>
-                <AlertCircle className="h-3 w-3 text-rose-600" />
-                <span className="truncate max-w-[150px]">Lỗi: {syncError}</span>
+              <span className="flex items-center space-x-1.5 bg-rose-50 text-rose-700 px-2.5 py-1 rounded-full text-xs font-semibold border border-rose-200" title={syncError}>
+                <AlertCircle className="h-3 w-3 text-rose-600 flex-shrink-0" />
+                <span className="truncate max-w-[160px]">Lỗi: {syncError}</span>
               </span>
             )}
             {syncSuccessMsg && (
-              <span className="flex items-center space-x-1.5 bg-emerald-50 text-emerald-750 px-3 py-1 rounded-full text-xs font-semibold border border-emerald-150">
-                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+              <span className="flex items-center space-x-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full text-xs font-semibold border border-emerald-200">
+                <CheckCircle2 className="h-3 w-3 text-emerald-600 flex-shrink-0" />
                 <span>{syncSuccessMsg}</span>
-              </span>
-            )}
-            {!isSyncing && !syncError && !syncSuccessMsg && lastSynced && (
-              <span className="text-xs text-slate-400 font-mono">
-                Đồng bộ Sheet: {lastSynced}
               </span>
             )}
           </div>
@@ -481,7 +508,7 @@ export default function App() {
         {/* Interactive content body panel */}
         <div className="flex-1 overflow-y-auto px-8 py-6">
           <div className="max-w-6xl mx-auto">
-            {activeTab === AppTab.SETTINGS && (
+            <div className={activeTab === AppTab.SETTINGS ? 'block' : 'hidden'}>
               <SettingsView
                 config={config}
                 onSaveConfig={handleSaveConfig}
@@ -491,30 +518,33 @@ export default function App() {
                 onManualPull={handleManualPull}
                 onManualPush={handleManualPush}
               />
-            )}
+            </div>
 
-            {activeTab === AppTab.LUAN_CHUYEN && (
+            <div className={activeTab === AppTab.LUAN_CHUYEN ? 'block' : 'hidden'}>
               <LuanChuyenView
                 config={config}
-                onHeaderActionsChange={setHeaderActions}
+                onHeaderActionsChange={setLuanChuyenHeader}
+                lastSynced={lastSynced}
               />
-            )}
+            </div>
 
-            {activeTab === AppTab.HOP_DONG_MOI && (
+            <div className={activeTab === AppTab.HOP_DONG_MOI ? 'block' : 'hidden'}>
               <HopDongMoiView
                 config={config}
-                onHeaderActionsChange={setHeaderActions}
+                onHeaderActionsChange={setHopDongMoiHeader}
+                lastSynced={lastSynced}
               />
-            )}
+            </div>
 
-            {activeTab === AppTab.BANG_KE && (
+            <div className={activeTab === AppTab.BANG_KE ? 'block' : 'hidden'}>
               <BangKeView
                 config={config}
-                onHeaderActionsChange={setHeaderActions}
+                onHeaderActionsChange={setBangKeHeader}
                 onSaveConfig={handleSaveConfig}
                 onManualPush={handleManualPush}
+                lastSynced={lastSynced}
               />
-            )}
+            </div>
           </div>
         </div>
       </main>
