@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ExceptionRule, ProductMaster, HeaderAliasesBangKe } from '../types';
+import { ExceptionRule, ProductMaster, HeaderAliasesBangKe, SiteMaster, LearnedRule } from '../types';
 
 export const DEFAULT_HEADER_ALIASES_BANG_KE: HeaderAliasesBangKe = {
   stt: ['STT', 'stt', 'No'],
@@ -81,7 +81,7 @@ export function normalizeText(value: any): string {
   let str = String(value).trim().toLowerCase();
 
   // Normalize Vietnamese diacritics
-  str = str.normalize('NFD').replace(/[\u0305-\u036f]/g, ''); // replaces decomposing symbols
+  str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // replaces decomposing symbols
   str = str
     .replace(/[àáạảãâầấậẩẫăằắặẳẵ]/g, 'a')
     .replace(/[èéẹẻẽêềếệểễ]/g, 'e')
@@ -90,6 +90,7 @@ export function normalizeText(value: any): string {
     .replace(/[ùúụủũưừứựửữ]/g, 'u')
     .replace(/[ỳýỵỷỹ]/g, 'y')
     .replace(/đ/g, 'd')
+    .replace(/[\u2013\u2014]/g, '-') // Chuẩn hóa en-dash và em-dash thành dấu gạch ngang chuẩn
     .replace(/[^a-z0-9\s-_/]/g, ' '); // Replace custom non-alphanumeric except safe delimiters with spaces
 
   // Replace multiple spaces with a single space
@@ -160,12 +161,119 @@ function calculateWordOverlap(inputNorm: string, kwNorm: string): number {
 }
 
 /**
- * 3. keywordMatch(inputText, productMaster)
- * Dùng để bóc tách thông tin Vụ Việc/Sản Phẩm dựa trên nội dung diễn giải thô.
+ * parseCompoundRules(products)
+ * Tự động bóc tách quy tắc kép từ keyword dạng:
+ * "Đơn vị tính CPM - Nội dung quảng cáo chứa cụm từ Admatic"
  */
-export function keywordMatch(
+export function parseCompoundRules(products: ProductMaster[]): ProductMaster[] {
+  const COMPOUND_REGEX = /^(?:đơn vị tính|don vi tinh|đvt|dvt)\s+([a-z0-9]+)\s*-\s*nội dung quảng cáo chứa cụm từ\s+(.+)$/i;
+
+  return products.map(prod => {
+    if (prod.isCompoundRule && prod.dvtRequired && prod.contentKeyword) {
+      return prod;
+    }
+
+    const trimmedKeyword = (prod.keyword || '').trim();
+    const match = trimmedKeyword.match(COMPOUND_REGEX);
+
+    if (match) {
+      const dvt = match[1].trim().toUpperCase();
+      const contentKw = match[2].trim();
+      return {
+        ...prod,
+        dvtRequired: dvt,
+        contentKeyword: contentKw,
+        isCompoundRule: true,
+      };
+    }
+
+    const normKw = normalizeText(trimmedKeyword);
+    const isBroad = normKw === 'quang cao' || normKw === 'chi phi' || normKw === 'tuyen bai' || normKw === 'banner';
+
+    return {
+      ...prod,
+      isBroadFallback: isBroad,
+    };
+  });
+}
+
+export const DEFAULT_INTERNAL_SITES: SiteMaster[] = [
+  { domain: 'kenh14.vn', maSite: 'K14', tenSite: 'Kenh14' },
+  { domain: 'cafef.vn', maSite: 'CAFEF', tenSite: 'CafeF' },
+  { domain: 'cafebiz.vn', maSite: 'CAFE BIZ', tenSite: 'CafeBiz' },
+  { domain: 'soha.vn', maSite: 'SHNEW', tenSite: 'Soha' },
+  { domain: 'afamily.vn', maSite: 'AFAMILY', tenSite: 'Afamily' },
+  { domain: 'genk.vn', maSite: 'GENK', tenSite: 'GenK' },
+  { domain: 'autopro.com.vn', maSite: 'AUTOPRO', tenSite: 'Autopro' },
+  { domain: 'gamek.vn', maSite: 'GAMEK', tenSite: 'GameK' },
+];
+
+/**
+ * extractSite(text, sites)
+ * Tìm Site Nội Bộ xuất hiện trong text (ưu tiên tên dài hơn trước)
+ * So khớp qua cả tenSite, maSite và domain
+ */
+export function extractSite(text: string, sites: SiteMaster[] = DEFAULT_INTERNAL_SITES): SiteMaster | null {
+  if (!text || sites.length === 0) return null;
+  const normInput = normalizeText(text);
+
+  let bestSite: SiteMaster | null = null;
+  let maxSiteLen = 0;
+
+  for (const site of sites) {
+    const candidateKeywords = [
+      site.tenSite,
+      site.maSite,
+      (site as any).quyChuan,
+      site.domain ? site.domain.replace(/\.(?:vn|com\.vn|com)$/i, '') : ''
+    ].filter(Boolean);
+
+    for (const kw of candidateKeywords) {
+      const normKw = normalizeText(kw);
+      if (!normKw) continue;
+
+      if (isWordBoundaryMatch(normInput, normKw) || (normKw.length >= 4 && normInput.includes(normKw))) {
+        if (normKw.length > maxSiteLen) {
+          maxSiteLen = normKw.length;
+          bestSite = site;
+        }
+      }
+    }
+  }
+
+  return bestSite;
+}
+
+/**
+ * isWordBoundaryMatch(text, keyword)
+ * Kiểm tra keyword khớp ranh giới từ trong text
+ */
+export function isWordBoundaryMatch(text: string, keyword: string): boolean {
+  if (!text || !keyword) return false;
+  const normT = normalizeText(text);
+  const normK = normalizeText(keyword);
+  if (!normT || !normK) return false;
+  if (normT === normK) return true;
+
+  const escaped = normK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i');
+  return regex.test(normT);
+}
+
+/**
+ * 3. matchProductAdvanced(inputText, donViTinh, products, sites, learnedRules)
+ * Thuật toán nhận diện 4 tầng:
+ * - Tầng 0: Sổ tay Tự học (LearnedRules) từ thao tác kế toán viên đã từng sửa
+ * - Tầng 1: Quy tắc kép có ĐVT (CPM/CPC)
+ * - Tầng 2: Phân loại Tuyến bài vs Social (Site NB vs Mua ngoài)
+ * - Tầng 3: So khớp từ khóa Master Data & Longest Match First
+ */
+export function matchProductAdvanced(
   inputText: string,
-  productMaster: ProductMaster[]
+  donViTinh: string | undefined,
+  products: ProductMaster[],
+  sites: SiteMaster[] = [],
+  learnedRules: LearnedRule[] = []
 ): KeywordMatchResult {
   const result: KeywordMatchResult = {
     bestMatch: null,
@@ -179,40 +287,278 @@ export function keywordMatch(
     thueSuat: '',
   };
 
-  if (!inputText || productMaster.length === 0) {
+  if (!inputText || (products.length === 0 && learnedRules.length === 0)) {
     return result;
   }
 
   const normInput = normalizeText(inputText);
+
+  // =========================================================================
+  // TẦNG 0: BỘ NHỚ TỰ HỌC TỪ KẾ TOÁN (CORRECTION MEMORY) - ƯU TIÊN SỐ 1
+  // =========================================================================
+  if (learnedRules && learnedRules.length > 0) {
+    for (const lr of learnedRules) {
+      const pattern = lr.rawContentPattern || (lr as any).originalText || (lr as any).normalizedKey || '';
+      const normLR = normalizeText(pattern);
+      if (!normLR) continue;
+
+      // Kiểm tra thêm điều kiện ĐVT nếu rule có chỉ định ĐVT
+      if (lr.donViTinh && donViTinh) {
+        const normDvtRule = normalizeText(lr.donViTinh);
+        const normDvtInput = normalizeText(donViTinh);
+        if (normDvtRule !== normDvtInput) continue;
+      }
+
+      if (normInput === normLR || (normLR.length >= 6 && normInput.includes(normLR))) {
+        const syntheticProd: ProductMaster = {
+          keyword: pattern,
+          maVuViec: lr.maVuViec,
+          tenSanPham: lr.tenSanPham,
+          tkDoanhThu: lr.tkDoanhThu || '51133',
+          thueSuat: lr.thueSuat !== undefined ? lr.thueSuat : '',
+        };
+        return {
+          bestMatch: syntheticProd,
+          candidates: [{ product: syntheticProd, score: 100, matchedKeyword: pattern }],
+          confidenceScore: 100,
+          status: 'OK',
+          matchedKeyword: pattern,
+          maVV: lr.maVuViec,
+          tenSanPham: lr.tenSanPham,
+          tkDoanhThu: lr.tkDoanhThu || '51133',
+          thueSuat: lr.thueSuat !== undefined ? lr.thueSuat : '',
+        };
+      }
+    }
+  }
+
+  // =========================================================================
+  // TẦNG 1: QUY TẮC KÉP CÓ ĐƠN VỊ TÍNH (CPM / CPC)
+  // =========================================================================
+  const normDvt = donViTinh ? normalizeText(donViTinh) : '';
+  if (normDvt) {
+    const matchedCompoundRules: { product: ProductMaster; score: number }[] = [];
+
+    for (const prod of products) {
+      if (!prod.isCompoundRule || !prod.dvtRequired || !prod.contentKeyword) continue;
+
+      const normReqDvt = (prod as any).__normDvtRequired || normalizeText(prod.dvtRequired);
+      const normContentKw = (prod as any).__normContentKeyword || normalizeText(prod.contentKeyword);
+
+      if (normDvt === normReqDvt && normContentKw && normInput.includes(normContentKw)) {
+        matchedCompoundRules.push({
+          product: prod,
+          score: 100,
+        });
+      }
+    }
+
+    if (matchedCompoundRules.length > 0) {
+      matchedCompoundRules.sort((a, b) => {
+        const lenA = (a.product.contentKeyword || '').length;
+        const lenB = (b.product.contentKeyword || '').length;
+        return lenB - lenA;
+      });
+
+      const best = matchedCompoundRules[0];
+      return {
+        bestMatch: best.product,
+        candidates: matchedCompoundRules.map(m => ({
+          product: m.product,
+          score: m.score,
+          matchedKeyword: m.product.keyword,
+        })),
+        confidenceScore: 100,
+        status: 'OK',
+        matchedKeyword: best.product.keyword,
+        maVV: best.product.maVuViec,
+        tenSanPham: best.product.tenSanPham,
+        tkDoanhThu: best.product.tkDoanhThu,
+        thueSuat: best.product.thueSuat !== undefined ? best.product.thueSuat : '',
+      };
+    }
+  }
+
+  // =========================================================================
+  // TẦNG 2: PHÂN LOẠI CHI PHÍ DỊCH VỤ / TUYẾN BÀI / SOCIAL (SITE NỘI BỘ VS MUA NGOÀI)
+  // =========================================================================
+  const CHI_PHI_REGEX = /(?:chi\s+phi\s+san\s+xuat|chi\s+phi\s+quan\s+tri|chi\s+phi\s+van\s+hanh|chi\s+phi\s+marketing|marketing\s+fee)/i;
+  if (CHI_PHI_REGEX.test(normInput)) {
+    const chiPhiProduct: ProductMaster = {
+      keyword: 'Chi phí',
+      maVuViec: 'CHI PHI',
+      tenSanPham: 'Chi phí',
+      tkDoanhThu: '51133',
+      thueSuat: 8,
+    };
+    return {
+      bestMatch: chiPhiProduct,
+      candidates: [{ product: chiPhiProduct, score: 100, matchedKeyword: chiPhiProduct.keyword }],
+      confidenceScore: 100,
+      status: 'OK',
+      matchedKeyword: chiPhiProduct.keyword,
+      maVV: 'CHI PHI',
+      tenSanPham: 'Chi phí',
+      tkDoanhThu: '51133',
+      thueSuat: 8,
+    };
+  }
+
+  const SOCIAL_REGEX = /(?:fanpage|tiktok|seeding|sharelink|video\s+fanpage)/i;
+  const isSocialSignal = SOCIAL_REGEX.test(normInput);
+
+  const TUYEN_BAI_REGEX = /(?:tuyen\s+bai|advertorial|bai\s+pr|pr\s+bai|editorial\s+content)/i;
+  const isTuyenBaiSignal = TUYEN_BAI_REGEX.test(normInput);
+
+  // Danh sách nhận diện báo ngoài (kể cả không có đuôi .vn)
+  const EXTERNAL_MEDIA_REGEX = /(?:thanhnien|thanh\s+nien|tuoitre|tuoi\s+tre|vietnamnet|eva\.vn|eva|znews|zing|elle|vnexpress|vn\s+express|dantri|dan\s+tri|vtv|dep\.com|dep|yeah1|schannel|beatvn|theanh28|hong\s+bien)/i;
+  const hasExternalDomain = /\.(?:vn|com|net|org)\b/i.test(inputText) && !extractSite(inputText, sites);
+  const isExternalMedia = EXTERNAL_MEDIA_REGEX.test(normInput) || hasExternalDomain;
+
+  if (isTuyenBaiSignal) {
+    // 1. Tuyến bài trên báo ngoài -> Bắt buộc là MUA NGOÀI
+    if (isExternalMedia) {
+      const muaNgoaiProduct: ProductMaster = {
+        keyword: 'Tuyến bài mua ngoài báo chí',
+        maVuViec: 'MUA NGOAI',
+        tenSanPham: 'Mua ngoài',
+        tkDoanhThu: '51133',
+        thueSuat: 8,
+      };
+      return {
+        bestMatch: muaNgoaiProduct,
+        candidates: [{ product: muaNgoaiProduct, score: 100, matchedKeyword: muaNgoaiProduct.keyword }],
+        confidenceScore: 100,
+        status: 'OK',
+        matchedKeyword: muaNgoaiProduct.keyword,
+        maVV: 'MUA NGOAI',
+        tenSanPham: 'Mua ngoài',
+        tkDoanhThu: '51133',
+        thueSuat: 8,
+      };
+    }
+    // 2. Tuyến bài trên Site Nội bộ (Kenh14, Genk, Cafebiz, Soha, CafeF, Afamily...) -> Bắt buộc là TUYEN BAI
+    const tuyenBaiProduct: ProductMaster = {
+      keyword: 'Tuyến bài',
+      maVuViec: 'TUYEN BAI',
+      tenSanPham: 'Tuyến bài',
+      tkDoanhThu: '51133',
+      thueSuat: 8,
+    };
+    return {
+      bestMatch: tuyenBaiProduct,
+      candidates: [{ product: tuyenBaiProduct, score: 100, matchedKeyword: tuyenBaiProduct.keyword }],
+      confidenceScore: 100,
+      status: 'OK',
+      matchedKeyword: tuyenBaiProduct.keyword,
+      maVV: 'TUYEN BAI',
+      tenSanPham: 'Tuyến bài',
+      tkDoanhThu: '51133',
+      thueSuat: 8,
+    };
+  }
+
+  if (isSocialSignal) {
+    const foundSite = extractSite(inputText, sites);
+
+    if (foundSite) {
+      // Fanpage/Tiktok thuộc Site Nội Bộ -> Gán mã Site quy chuẩn (K14, GENK, AFAMILY...)
+      const siteCode = foundSite.maSite || (foundSite as any).quyChuan || '';
+      const actionName = normInput.includes('tiktok') ? 'Đăng Tiktok' : 'Đăng fanpage';
+      const syntheticProd: ProductMaster = {
+        keyword: `${actionName} ${siteCode}`,
+        maVuViec: siteCode,
+        tenSanPham: actionName,
+        tkDoanhThu: '51133',
+        thueSuat: 8,
+      };
+      return {
+        bestMatch: syntheticProd,
+        candidates: [{ product: syntheticProd, score: 100, matchedKeyword: syntheticProd.keyword }],
+        confidenceScore: 100,
+        status: 'OK',
+        matchedKeyword: syntheticProd.keyword,
+        maVV: siteCode,
+        tenSanPham: syntheticProd.tenSanPham,
+        tkDoanhThu: syntheticProd.tkDoanhThu,
+        thueSuat: syntheticProd.thueSuat,
+      };
+    } else {
+      // Fanpage/Tiktok ngoài (Beatvn, Theanh28, Schannel...) -> MUA NGOÀI
+      const muaNgoaiProduct: ProductMaster = {
+        keyword: 'Social Mua ngoài',
+        maVuViec: 'MUA NGOAI',
+        tenSanPham: 'Mua ngoài',
+        tkDoanhThu: '51133',
+        thueSuat: 8,
+      };
+      return {
+        bestMatch: muaNgoaiProduct,
+        candidates: [{ product: muaNgoaiProduct, score: 100, matchedKeyword: muaNgoaiProduct.keyword }],
+        confidenceScore: 100,
+        status: 'OK',
+        matchedKeyword: muaNgoaiProduct.keyword,
+        maVV: 'MUA NGOAI',
+        tenSanPham: 'Mua ngoài',
+        tkDoanhThu: '51133',
+        thueSuat: 8,
+      };
+    }
+  }
+
+  // =========================================================================
+  // TẦNG 3: SO KHỚP TỪ KHÓA MASTER DATA & LONGEST MATCH FIRST
+  // =========================================================================
   const candidates: CandidateMatch[] = [];
 
-  for (const prod of productMaster) {
+  for (const prod of products) {
+    if (prod.isCompoundRule) continue;
+
     const normKW = (prod as any).__normKeyword || normalizeText(prod.keyword);
     if (!normKW) continue;
 
     let score = 0;
 
-    // A. Thống kê so khớp chuẩn xác tuyệt đối (100)
-    if (normInput === normKW) {
+    // 1. So khớp từ ngắn (<= 4 ký tự) như PR, CPD, KOL, KOC, TVC, iTVC, AdX: Dùng Word Boundary
+    if (normKW.length <= 4) {
+      if (normInput === normKW) {
+        score = 100;
+      } else if (isWordBoundaryMatch(normInput, normKW)) {
+        score = 95;
+      } else {
+        score = 0;
+      }
+    }
+    // 2. So khớp exact
+    else if (normInput === normKW) {
       score = 100;
     }
-    // B. Substring match: Keyword nằm trọn vẹn trong diễn giải (80 - 95 điểm tỷ lệ theo độ phủ)
+    // 3. Substring match: Keyword nằm trọn vẹn trong diễn giải
     else if (normInput.includes(normKW)) {
       const coverageRatio = normKW.length / normInput.length;
       score = Math.round(80 + 15 * coverageRatio);
     }
-    // C. Từ khoá ngược: Diễn giải lại nằm trong keyword (70 - 79 điểm)
+    // 4. Từ khóa ngược: Diễn giải nằm trong keyword
     else if (normKW.includes(normInput)) {
       const coverageRatio = normInput.length / normKW.length;
       score = Math.round(70 + 9 * coverageRatio);
     }
-    // D. Fuzzy overlap match theo cụm từ (50 - 69 điểm)
+    // 5. Word overlap
     else {
       const overlapScore = calculateWordOverlap(normInput, normKW);
       if (overlapScore > 0) {
-        // scale to max 65
         score = Math.round(40 + (overlapScore * 25) / 100);
       }
+    }
+
+    // Dìm hạng từ khóa chung (broad fallback)
+    if (prod.isBroadFallback && score > 0) {
+      score = Math.min(score, 60);
+    }
+
+    // Đặc biệt: Nếu diễn giải chứa "chi phi marketing" hoặc "marketing fee", ưu tiên mã CHI PHI
+    if ((normInput.includes('chi phi marketing') || normInput.includes('marketing fee')) && prod.maVuViec === 'CHI PHI') {
+      score = Math.max(score, 90);
     }
 
     if (score >= 40) {
@@ -224,10 +570,14 @@ export function keywordMatch(
     }
   }
 
-  // Sắp xếp ưu tiên: Điểm số cao nhất -> Keyword dài hơn -> Mã vụ việc cụ thể hơn
   candidates.sort((a, b) => {
     if (b.score !== a.score) {
       return b.score - a.score;
+    }
+    const aBroad = a.product.isBroadFallback ? 1 : 0;
+    const bBroad = b.product.isBroadFallback ? 1 : 0;
+    if (aBroad !== bBroad) {
+      return aBroad - bBroad;
     }
     return b.matchedKeyword.length - a.matchedKeyword.length;
   });
@@ -244,9 +594,9 @@ export function keywordMatch(
     result.tkDoanhThu = best.product.tkDoanhThu;
     result.thueSuat = best.product.thueSuat !== undefined ? best.product.thueSuat : '';
 
-    // Xác định Trạng thái kiểm duyệt (Status check rules)
-    // 1. Nếu điểm cao nhưng có ứng viên thứ 2 điểm số xê dịch sát nút (biên độ dưới 6 điểm), bắt buộc CẦN KIỂM TRÁ để kiểm toán viên rà soát lại
-    const hasCompetitor = candidates.length > 1 && (best.score - candidates[1].score < 6);
+    const hasCompetitor = candidates.length > 1 &&
+      (best.score - candidates[1].score < 6) &&
+      (candidates[1].product.maVuViec !== best.product.maVuViec);
 
     if (hasCompetitor) {
       result.status = 'CAN_KIEM_TRA';
@@ -260,6 +610,17 @@ export function keywordMatch(
   }
 
   return result;
+}
+
+/**
+ * 4. keywordMatch(inputText, productMaster)
+ * Backward compatible wrapper gọi matchProductAdvanced.
+ */
+export function keywordMatch(
+  inputText: string,
+  productMaster: ProductMaster[]
+): KeywordMatchResult {
+  return matchProductAdvanced(inputText, '', productMaster, [], []);
 }
 
 /**

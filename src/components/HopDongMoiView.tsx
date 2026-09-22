@@ -10,14 +10,15 @@ import {
   Settings, RefreshCw, ChevronLeft, ChevronRight, Info, Eye, Sparkles, Filter
 } from 'lucide-react';
 import { 
-  ContractSettings, UploadedFileData, CustomerMaster, DepartmentMaster, ProductMaster 
+  ContractSettings, UploadedFileData, CustomerMaster, DepartmentMaster, ProductMaster,
+  SiteMaster, LearnedRule 
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel, reparseSheetWithHeaderIndex } from '../utils/excel';
 import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fastImport';
 import { 
-  normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
-  normalizeContractNameKey
+  normalizeText, lookupExact, keywordMatch, matchProductAdvanced, DEFAULT_INTERNAL_SITES,
+  applyExceptionRules, parseNumber, normalizeContractNameKey
 } from '../utils/businessLogic';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
 import ConfirmModal from './ConfirmModal';
@@ -84,6 +85,8 @@ export default function HopDongMoiView({
   const [customers, setCustomers] = useState<CustomerMaster[]>([]);
   const [departments, setDepartments] = useState<DepartmentMaster[]>([]);
   const [products, setProducts] = useState<ProductMaster[]>([]);
+  const [sites, setSites] = useState<SiteMaster[]>(DEFAULT_INTERNAL_SITES);
+  const [learnedRules, setLearnedRules] = useState<LearnedRule[]>([]);
   const [loadingMaster, setLoadingMaster] = useState(true);
 
   // Files uploaded by accountant
@@ -241,9 +244,13 @@ export default function HopDongMoiView({
         const c = await dbService.getCustomers();
         const d = await dbService.getDepartments();
         const p = await dbService.getProducts();
+        const s = await dbService.getSites();
+        const lr = await dbService.getLearnedRules();
         setCustomers(c);
         setDepartments(d);
         setProducts(p);
+        if (s && s.length > 0) setSites(s);
+        if (lr && lr.length > 0) setLearnedRules(lr);
       } catch (err) {
         console.error('Lỗi khi tải Master Data trong HopDongMoiView:', err);
       } finally {
@@ -359,9 +366,10 @@ export default function HopDongMoiView({
       const maKhach = lookupExact(tenKhachHang, preNormalizedCustomers, 'tenKhach', 'maKhach') || '';
       const boPhanThucHien = lookupExact(tenSale, preNormalizedDepartments, 'tenBoPhan', 'maSale') || '';
 
-      // 4. logic: Mã vụ việc (keyword match)
+      // 4. logic: Mã vụ việc (matchProductAdvanced 4 tầng nhận diện & Tự học)
+      const donViTinh = getCellValue(row, 'Đơn vị tính', 'Don vi tinh', 'ĐVT', 'DVT').trim();
       const combinedProductText = [sanPham, loaiBanner, tenBanner].filter(Boolean).join(' ');
-      const matchResult = keywordMatch(combinedProductText, preNormalizedProducts);
+      const matchResult = matchProductAdvanced(combinedProductText, donViTinh, products, sites, learnedRules);
 
       const maVv = matchResult.maVV || '';
       const confidenceScore = matchResult.bestMatch ? matchResult.confidenceScore : 0;
@@ -502,6 +510,11 @@ export default function HopDongMoiView({
         confidenceScore,
         matchStatus,
         hasThueSuatInMaster,
+
+        // Metadata ghi nhớ tự học (Correction Memory)
+        __initialMaVv: maVv,
+        __lookupPattern: combinedProductText,
+        donViTinh,
 
         existsInFast,
         fastStatus,
@@ -781,7 +794,30 @@ export default function HopDongMoiView({
       row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70
     );
 
-    const executeExport = () => {
+    const executeExport = async () => {
+      // 1. Tự động thu nhận phản hồi sửa đổi của kế toán vào Sổ tay Tự học (Feedback-Driven Correction Memory)
+      if (processedRows) {
+        let learnedCount = 0;
+        for (const r of processedRows) {
+          if (r.maVv && r.__initialMaVv && r.maVv !== r.__initialMaVv && r.__lookupPattern) {
+            await dbService.upsertLearnedRule({
+              rawContentPattern: r.__lookupPattern,
+              chuyenTrang: r.chuyenTrang,
+              donViTinh: r.donViTinh,
+              maVuViec: r.maVv,
+              tenSanPham: r.sanPhamImport || r.maVv,
+              tkDoanhThu: r.tkDoanhThu,
+              userNote: `Tự động học từ HĐ mới khi xuất file (${r.maHopDong || ''})`
+            });
+            learnedCount++;
+          }
+        }
+        if (learnedCount > 0) {
+          const freshRules = await dbService.getLearnedRules();
+          setLearnedRules(freshRules);
+        }
+      }
+
       const dataExcel = buildFastImportRows(eligibleExportRows, { status: 2, sttMode: 'blank' });
 
       exportToExcel(

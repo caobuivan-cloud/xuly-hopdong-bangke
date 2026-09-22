@@ -38,6 +38,7 @@ export interface NormalizedBangKeRow {
   chuyenTrang: string;
   lookupContent: string;
   noiDung?: string;
+  donViTinh?: string;
   soLuong?: number;
   donGia?: number;
   chietKhau?: number;
@@ -94,11 +95,39 @@ export interface CustomerMaster {
   maKhach: string;
 }
 
+export interface SiteMaster {
+  tenSite: string;
+  maSite: string;
+  domain?: string;
+  quyChuan?: string;
+  ghiChu?: string;
+}
+
 export interface ProductMaster {
   keyword: string;
   maVuViec: string;
   tenSanPham: string;
   tkDoanhThu: string;
   thueSuat?: string | number;
+  dvtRequired?: string;
+  contentKeyword?: string;
+  isCompoundRule?: boolean;
+  isBroadFallback?: boolean;
+}
+
+export interface LearnedRule {
+  id: string;
+  rawContentPattern: string;
+  chuyenTrang?: string;
+  donViTinh?: string;
+  maVuViec: string;
+  tenSanPham: string;
+  tkDoanhThu?: string;
+  thueSuat?: string | number;
+  useCount?: number;
+  createdAt?: string;
+  updatedAt: string;
+  user?: string;
+  userNote?: string;
 }
 

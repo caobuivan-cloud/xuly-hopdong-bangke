@@ -326,7 +326,7 @@ export function exportToExcel(
 /**
  * Downloads a mock template with prefilled columns so the accountant has instant data to play with.
  */
-export function downloadTemplate(type: 'luan_chuyen' | 'hop_dong_moi' | 'bang_ke' | 'm_bophan' | 'm_khach' | 'm_sanpham'): void {
+export function downloadTemplate(type: 'luan_chuyen' | 'hop_dong_moi' | 'bang_ke' | 'm_bophan' | 'm_khach' | 'm_sanpham' | 'm_site'): void {
   let sheetName = '';
   let filename = '';
   let data: Record<string, any>[] = [];
@@ -517,6 +517,53 @@ export function downloadTemplate(type: 'luan_chuyen' | 'hop_dong_moi' | 'bang_ke
           'Chuẩn hóa Tên sản phẩm': 'Dịch vụ Clip Youtube',
           'TK doanh thu': '51113',
           'Thuế suất': 8,
+        },
+      ];
+      break;
+
+    case 'm_site':
+      sheetName = 'Site Nội Bộ';
+      filename = 'Master_Site_Noi_Bo.xlsx';
+      data = [
+        {
+          'Tên site': 'Kênh 14',
+          'Mã site': 'K14',
+          'Domain': 'kenh14.vn',
+        },
+        {
+          'Tên site': 'CafeF',
+          'Mã site': 'CAFEF',
+          'Domain': 'cafef.vn',
+        },
+        {
+          'Tên site': 'CafeBiz',
+          'Mã site': 'CAFEBIZ',
+          'Domain': 'cafebiz.vn',
+        },
+        {
+          'Tên site': 'Soha',
+          'Mã site': 'SOHA',
+          'Domain': 'soha.vn',
+        },
+        {
+          'Tên site': 'Afamily',
+          'Mã site': 'AFAMILY',
+          'Domain': 'afamily.vn',
+        },
+        {
+          'Tên site': 'GenK',
+          'Mã site': 'GENK',
+          'Domain': 'genk.vn',
+        },
+        {
+          'Tên site': 'AutoPro',
+          'Mã site': 'AUTOPRO',
+          'Domain': 'autopro.com.vn',
+        },
+        {
+          'Tên site': 'GameK',
+          'Mã site': 'GAMEK',
+          'Domain': 'gamek.vn',
         },
       ];
       break;

@@ -19,6 +19,8 @@ const RULES_SHEET = "ExceptionRules";
 const DEPTS_SHEET = "Departments";
 const CUSTS_SHEET = "Customers";
 const PRODS_SHEET = "Products";
+const SITES_SHEET = "Sites";
+const LEARNED_SHEET = "LearnedRules";
 const LOGS_SHEET = "ActivityLogs";
 
 const SPREADSHEET_ID = "1-_xq6s9A4mYC6NyQoxZQfMoKz7SqkpW1Oq0iPpu7O-o";
@@ -34,7 +36,7 @@ function getSpreadsheet() {
 function doGet(e) {
   const action = e.parameter.action;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  initializeSheets(ss, [CONFIG_SHEET, RULES_SHEET, DEPTS_SHEET, CUSTS_SHEET, PRODS_SHEET]);
+  initializeSheets(ss, [CONFIG_SHEET, RULES_SHEET, DEPTS_SHEET, CUSTS_SHEET, PRODS_SHEET, SITES_SHEET, LEARNED_SHEET]);
   
   if (action === 'read_all') {
     const data = {
@@ -42,7 +44,9 @@ function doGet(e) {
       exceptionRules: readSheetData(ss.getSheetByName(RULES_SHEET)),
       departments: readSheetData(ss.getSheetByName(DEPTS_SHEET)),
       customers: readSheetData(ss.getSheetByName(CUSTS_SHEET)),
-      products: readSheetData(ss.getSheetByName(PRODS_SHEET))
+      products: readSheetData(ss.getSheetByName(PRODS_SHEET)),
+      sites: readSheetData(ss.getSheetByName(SITES_SHEET)),
+      learnedRules: readSheetData(ss.getSheetByName(LEARNED_SHEET))
     };
     return createJsonResponse(data);
   }
@@ -57,13 +61,15 @@ function doPost(e) {
     
     if (action === 'save_all') {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
-      initializeSheets(ss, [CONFIG_SHEET, RULES_SHEET, DEPTS_SHEET, CUSTS_SHEET, PRODS_SHEET]);
+      initializeSheets(ss, [CONFIG_SHEET, RULES_SHEET, DEPTS_SHEET, CUSTS_SHEET, PRODS_SHEET, SITES_SHEET, LEARNED_SHEET]);
       
       if (postData.config) writeSheetData(ss.getSheetByName(CONFIG_SHEET), postData.config, true);
       if (postData.exceptionRules) writeSheetData(ss.getSheetByName(RULES_SHEET), postData.exceptionRules);
       if (postData.departments) writeSheetData(ss.getSheetByName(DEPTS_SHEET), postData.departments);
       if (postData.customers) writeSheetData(ss.getSheetByName(CUSTS_SHEET), postData.customers);
       if (postData.products) writeSheetData(ss.getSheetByName(PRODS_SHEET), postData.products);
+      if (postData.sites) writeSheetData(ss.getSheetByName(SITES_SHEET), postData.sites);
+      if (postData.learnedRules) writeSheetData(ss.getSheetByName(LEARNED_SHEET), postData.learnedRules);
       
       return createJsonResponse({ success: true, message: "Sync successful" });
     }

@@ -10,13 +10,15 @@ import {
   Settings, RefreshCw, ChevronLeft, ChevronRight, Info, Eye, Sparkles
 } from 'lucide-react';
 import { 
-  ContractSettings, UploadedFileData, CustomerMaster, DepartmentMaster, ProductMaster 
+  ContractSettings, UploadedFileData, CustomerMaster, DepartmentMaster, ProductMaster,
+  SiteMaster, LearnedRule 
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel } from '../utils/excel';
 import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fastImport';
 import { 
-  normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber 
+  normalizeText, lookupExact, keywordMatch, matchProductAdvanced, DEFAULT_INTERNAL_SITES,
+  applyExceptionRules, parseNumber 
 } from '../utils/businessLogic';
 import { dbService, writeActionLogToSheet } from '../services/dbService';
 import ConfirmModal from './ConfirmModal';
@@ -99,6 +101,8 @@ export default function LuanChuyenView({
   const [customers, setCustomers] = useState<CustomerMaster[]>([]);
   const [departments, setDepartments] = useState<DepartmentMaster[]>([]);
   const [products, setProducts] = useState<ProductMaster[]>([]);
+  const [sites, setSites] = useState<SiteMaster[]>(DEFAULT_INTERNAL_SITES);
+  const [learnedRules, setLearnedRules] = useState<LearnedRule[]>([]);
   const [loadingMaster, setLoadingMaster] = useState(true);
 
   // Separate upload states for Hard Contract and Fast Contract
@@ -233,9 +237,13 @@ export default function LuanChuyenView({
         const c = await dbService.getCustomers();
         const d = await dbService.getDepartments();
         const p = await dbService.getProducts();
+        const s = await dbService.getSites();
+        const lr = await dbService.getLearnedRules();
         setCustomers(c);
         setDepartments(d);
         setProducts(p);
+        if (s && s.length > 0) setSites(s);
+        if (lr && lr.length > 0) setLearnedRules(lr);
       } catch (err) {
         console.error('Error loading Master Data in LuanChuyenView:', err);
       } finally {
@@ -310,8 +318,9 @@ export default function LuanChuyenView({
       // 3. Lookup Bộ phận thực hiện
       let boPhanThucHien = lookupExact(tenNvkd, departments, 'tenBoPhan', 'maSale') || originalBoPhan;
 
-      // 4. Product matching (ma_vv & Sản phầm Import)
-      const matchResult = keywordMatch(chuyenTrang, products);
+      // 4. Product matching (ma_vv & Sản phầm Import) với 4 tầng nhận diện & Tự học
+      const donViTinh = getCellValue(row, 'Đơn vị tính', 'Don vi tinh', 'ĐVT', 'DVT').trim();
+      const matchResult = matchProductAdvanced(chuyenTrang, donViTinh, products, sites, learnedRules);
       let maVv = matchResult.maVV || getCellValue(row, 'ma_vv', 'Mã vụ việc', 'Mã VV').trim();
       let tkDoanhThu = matchResult.tkDoanhThu || getCellValue(row, 'tk_doanh thu', 'tk_doanhthu', 'Tài khoản doanh thu').trim();
       let sanPhamImport = matchResult.tenSanPham || getCellValue(row, 'Sản phầm Import', 'SanPhamImport', 'Tên sản phẩm', 'Sản phẩm').trim();
@@ -428,6 +437,11 @@ export default function LuanChuyenView({
 
         confidenceScore: matchResult.bestMatch ? matchResult.confidenceScore : 0,
         matchStatus: matchResult.bestMatch ? matchResult.status : 'KHONG_MATCH',
+
+        // Metadata ghi nhớ tự học (Correction Memory)
+        __initialMaVv: maVv,
+        __lookupPattern: chuyenTrang,
+        donViTinh,
 
         existsInFast,
         fastStatus,
@@ -627,7 +641,30 @@ export default function LuanChuyenView({
       row.confidenceScore < 70
     );
 
-    const executeExport = () => {
+    const executeExport = async () => {
+      // 1. Tự động thu nhận phản hồi sửa đổi của kế toán vào Sổ tay Tự học (Feedback-Driven Correction Memory)
+      if (processedRows) {
+        let learnedCount = 0;
+        for (const r of processedRows) {
+          if (r.maVv && r.__initialMaVv && r.maVv !== r.__initialMaVv && r.__lookupPattern) {
+            await dbService.upsertLearnedRule({
+              rawContentPattern: r.__lookupPattern,
+              chuyenTrang: r.chuyenTrang,
+              donViTinh: r.donViTinh,
+              maVuViec: r.maVv,
+              tenSanPham: r.sanPhamImport || r.maVv,
+              tkDoanhThu: r.tkDoanhThu,
+              userNote: `Tự động học từ sửa tay khi xuất file (${r.maHopDong || ''})`
+            });
+            learnedCount++;
+          }
+        }
+        if (learnedCount > 0) {
+          const freshRules = await dbService.getLearnedRules();
+          setLearnedRules(freshRules);
+        }
+      }
+
       const exportFormatted = buildFastImportRows(eligibleExportRows, { status: 1, sttMode: 'blank' });
 
       exportToExcel(

@@ -12,13 +12,14 @@ import {
 } from 'lucide-react';
 import { 
   ContractSettings, UploadedFileData, CustomerMaster, DepartmentMaster, ProductMaster,
-  BangKeTemplateId 
+  BangKeTemplateId, SiteMaster, LearnedRule 
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel } from '../utils/excel';
 import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fastImport';
 import { 
-  normalizeText, lookupExact, keywordMatch, applyExceptionRules, parseNumber,
+  normalizeText, lookupExact, keywordMatch, matchProductAdvanced, DEFAULT_INTERNAL_SITES,
+  applyExceptionRules, parseNumber,
   parsePostingDateRange, parseContractDateFromBooking, buildFastContractLookup,
   getRawCellValue, lookupFastContractByBooking, buildGhiChuChiTietIdempotent,
   sanitizeNewlinesToDash, extractSunContentDetail
@@ -101,6 +102,8 @@ export default function BangKeView({
   const [customers, setCustomers] = useState<CustomerMaster[]>([]);
   const [departments, setDepartments] = useState<DepartmentMaster[]>([]);
   const [products, setProducts] = useState<ProductMaster[]>([]);
+  const [sites, setSites] = useState<SiteMaster[]>(DEFAULT_INTERNAL_SITES);
+  const [learnedRules, setLearnedRules] = useState<LearnedRule[]>([]);
   const [loadingMaster, setLoadingMaster] = useState(true);
 
   // Modal configuration for header mapping
@@ -270,9 +273,13 @@ export default function BangKeView({
         const c = await dbService.getCustomers();
         const d = await dbService.getDepartments();
         const p = await dbService.getProducts();
+        const s = await dbService.getSites();
+        const lr = await dbService.getLearnedRules();
         setCustomers(c);
         setDepartments(d);
         setProducts(p);
+        if (s && s.length > 0) setSites(s);
+        if (lr && lr.length > 0) setLearnedRules(lr);
       } catch (err) {
         console.error('Lỗi khi tải Master Data trong BangKeView:', err);
       } finally {
@@ -632,12 +639,12 @@ export default function BangKeView({
             const parsedContractDate = parseContractDateFromBooking(maBooking);
             const ngayHopDong = parsedContractDate.text || '';
 
-            // 5. Product lookup via Normalized Precedence (Ưu tiên normalized.lookupContent -> normalized.chuyenTrang -> noiDungQuangCao)
+            // 5. Product lookup via Normalized Precedence (Ưu tiên normalized.lookupContent -> normalized.chuyenTrang -> noiDungQuangCao) với 4 tầng nhận diện & Tự học
             const textToLookup = normalized.lookupContent || normalized.chuyenTrang || noiDungQuangCao;
-            let matchResult = keywordMatch(textToLookup, preNormalizedProducts);
+            let matchResult = matchProductAdvanced(textToLookup, donViTinh, products, sites, learnedRules);
             // Fallback: nếu lookup theo textToLookup không tìm thấy mà có noiDungQuangCao khác biệt, thử lookup tiếp theo noiDungQuangCao
             if ((!matchResult.bestMatch || matchResult.status === 'KHONG_MATCH') && noiDungQuangCao && noiDungQuangCao !== textToLookup) {
-              const fallbackMatch = keywordMatch(noiDungQuangCao, preNormalizedProducts);
+              const fallbackMatch = matchProductAdvanced(noiDungQuangCao, donViTinh, products, sites, learnedRules);
               if (fallbackMatch.bestMatch && fallbackMatch.status !== 'KHONG_MATCH') {
                 matchResult = fallbackMatch;
               }
@@ -732,6 +739,10 @@ export default function BangKeView({
               chuyenTrang,
               ghiChuChiTiet,
               status: 1, // Bảng kê Status = 1
+
+              // Metadata ghi nhớ tự học (Correction Memory)
+              __initialMaVv: maVv,
+              __lookupPattern: textToLookup,
 
               __sourceFile: fileItem.fileName,
               __templateId: fileTemplateId,
@@ -1056,7 +1067,30 @@ export default function BangKeView({
       row.matchStatus === 'CAN_KIEM_TRA' || row.confidenceScore < 70
     );
 
-    const executeExport = () => {
+    const executeExport = async () => {
+      // 1. Tự động thu nhận phản hồi sửa đổi của kế toán vào Sổ tay Tự học (Feedback-Driven Correction Memory)
+      if (processedRows) {
+        let learnedCount = 0;
+        for (const r of processedRows) {
+          if (r.maVv && r.__initialMaVv && r.maVv !== r.__initialMaVv && r.__lookupPattern) {
+            await dbService.upsertLearnedRule({
+              rawContentPattern: r.__lookupPattern,
+              chuyenTrang: r.chuyenTrang,
+              donViTinh: r.donViTinh,
+              maVuViec: r.maVv,
+              tenSanPham: r.sanPhamImport || r.maVv,
+              tkDoanhThu: r.tkDoanhThu,
+              userNote: `Tự động học từ bảng kê khi xuất file (${r.maBooking || ''})`
+            });
+            learnedCount++;
+          }
+        }
+        if (learnedCount > 0) {
+          const freshRules = await dbService.getLearnedRules();
+          setLearnedRules(freshRules);
+        }
+      }
+
       // Loại bỏ các dòng chiết khấu 100% hoặc VAT rỗng/bằng 0 theo quy định chuẩn FAST
       const validRows = filterFastImportEligibleRows(exportSubset);
       if (validRows.length === 0) {
