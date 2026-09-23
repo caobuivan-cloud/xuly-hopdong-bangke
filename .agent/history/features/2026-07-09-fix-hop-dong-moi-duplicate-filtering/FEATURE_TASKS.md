@@ -1,6 +1,6 @@
 # Feature Tasks: Sửa logic loại trừ trùng hợp đồng trong màn hình Hợp đồng mới
 
-> **Trạng thái**: 🔄 Đang thực hiện
+> **Trạng thái**: ✅ Hoàn thành
 > **Liên kết plan**: `FEATURE_PLAN.md`
 > **Ngày tạo**: 2026-07-09
 
@@ -22,7 +22,7 @@
 - [x] Task 1.3 **[FR-01]**: Loại bỏ kiểm tra `isStatus2` khỏi `shouldKeepRow` (dòng 623-624) và `eligibleExportRows` (dòng 684-685).
 - [x] Task 1.4 **[FR-02]**: Thêm comment vào code giải thích sự khác biệt giữa `normalizeContractNameKey` và `normalizeText` ngay tại chỗ dùng trong `fastLookupMap`.
 - [x] Task 1.5 **[FR-03]**: Thêm comment vào block `eligibleExportRows` giải thích rằng hàm này luôn loại trùng bất kể trạng thái toggle UI `filterActive` (behavior intentional).
-- [/] Task 1.Final: 🧪 Test & Verify Phase 1 (Bắt buộc)
+- [x] Task 1.Final: 🧪 Test & Verify Phase 1 (Bắt buộc)
   - Tải lên danh sách Hợp đồng mới có dòng chứa `HDTEST`.
   - Tải lên danh sách Fast chứa `HDTEST/AD` (hoặc `HDTEST AD` với khoảng trắng) ở Trạng thái = 2.
   - Xác nhận hợp đồng này bị loại trừ hoàn toàn khi hiển thị UI lọc trùng và khi nhấn xuất Excel.
@@ -44,3 +44,4 @@
 | 2026-07-09 14:29 | Phase 1 | Task 1.4 | Thêm comment giải thích normalize | done | |
 | 2026-07-09 14:29 | Phase 1 | Task 1.5 | Thêm comment giải thích behavior export Excel | done | |
 | 2026-07-09 14:29 | Phase 1 | Task 1.Final | Bắt đầu kiểm tra nghiệm thu | start | |
+| 2026-09-23 09:00 | Phase 1 | Task 1.Final | User nghiệm thu và xác nhận đóng feature | done | |

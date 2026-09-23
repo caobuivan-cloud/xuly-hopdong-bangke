@@ -136,9 +136,14 @@ export function parseExcelWorkbook(workbook: XLSX.WorkBook, fileName: string = '
     const effectiveHeaderRow = headerRowIndex >= 0 ? headerRowIndex : 0;
 
     // Bước 3: Parse dữ liệu từ đúng dòng header trở đi
+    // Lưu ý: rawArray bắt đầu từ dòng đầu tiên có dữ liệu của sheet (worksheet['!ref'].s.r).
+    // range truyền vào sheet_to_json phải là chỉ số dòng tuyệt đối trong worksheet (0-based).
+    const sheetStartRow = worksheet['!ref'] ? XLSX.utils.decode_range(worksheet['!ref']).s.r : 0;
+    const absoluteHeaderRow = sheetStartRow + effectiveHeaderRow;
+
     const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, {
       defval: '',
-      range: effectiveHeaderRow,
+      range: absoluteHeaderRow,
     });
 
     const dataRows = rawArray.slice(effectiveHeaderRow + 1);

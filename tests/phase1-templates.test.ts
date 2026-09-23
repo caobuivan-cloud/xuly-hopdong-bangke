@@ -84,13 +84,14 @@ console.log('✅ Passed: Suffix /AD bảo đảm idempotent');
 // 4. Test đọc 3 workbook thật trong thư mục Form/
 console.log('\n[TEST 4] Kiểm thử nạp 3 file workbook thật:');
 const filesToTest = [
-  { fileName: 'BK Mẫu MMS. Hương Hiền.xlsx', expectedTemplate: 'MMS' },
-  { fileName: 'BK Mẫu SUN.Hương Hiền.xlsx', expectedTemplate: 'SUN' },
-  { fileName: 'Mẫu BK WPP.Hương Hiền.xlsx', expectedTemplate: 'WPP' },
+  { dir: formDir, fileName: 'BK Mẫu MMS. Hương Hiền.xlsx', expectedTemplate: 'MMS' },
+  { dir: formDir, fileName: 'BK Mẫu SUN.Hương Hiền.xlsx', expectedTemplate: 'SUN' },
+  { dir: formDir, fileName: 'Mẫu BK WPP.Hương Hiền.xlsx', expectedTemplate: 'WPP' },
+  { dir: path.resolve(__dirname, '../File test'), fileName: 'Bảng kê so 2_ PR_SunGroup- HT0080126-Thang 08.2026 (4).xlsx', expectedTemplate: 'SUN' },
 ];
 
 for (const item of filesToTest) {
-  const filePath = path.join(formDir, item.fileName);
+  const filePath = path.join(item.dir, item.fileName);
   if (!fs.existsSync(filePath)) {
     console.log(`⚠️ Bỏ qua test file mẫu ${item.fileName} (không tìm thấy trên môi trường hiện tại)`);
     continue;

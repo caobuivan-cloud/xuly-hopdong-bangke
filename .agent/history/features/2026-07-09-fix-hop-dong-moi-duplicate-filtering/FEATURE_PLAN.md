@@ -49,9 +49,9 @@
 
 ## 5. Acceptance Criteria
 
-- [ ] UI không hiển thị các hợp đồng có mã hoặc tên trùng lắp với dữ liệu Fast (đã tải lên) khi bật bộ lọc loại trừ trùng.
-- [ ] Tệp Excel xuất ra không chứa bất kỳ hợp đồng nào trùng lắp với dữ liệu Fast (không phân biệt Trạng thái trong Fast là 1 hay 2).
-- [ ] So khớp chính xác kể cả khi có khoảng trắng thừa hoặc lệch ký tự phân cách (ví dụ `HD01/AD` vs `HD01 / AD`).
+- [x] UI không hiển thị các hợp đồng có mã hoặc tên trùng lắp với dữ liệu Fast (đã tải lên) khi bật bộ lọc loại trừ trùng.
+- [x] Tệp Excel xuất ra không chứa bất kỳ hợp đồng nào trùng lắp với dữ liệu Fast (không phân biệt Trạng thái trong Fast là 1 hay 2).
+- [x] So khớp chính xác kể cả khi có khoảng trắng thừa hoặc lệch ký tự phân cách (ví dụ `HD01/AD` vs `HD01 / AD`).
 
 ## 6. Files và modules bị ảnh hưởng
 
