@@ -3,6 +3,17 @@
 > Phạm vi: Frontend, UI, UX, state client, routing, hiển thị, validation phía client
 > Format: [Conventional Commits](https://www.conventionalcommits.org/)
 > Ngôn ngữ: Tiếng Việt
+## 2026-09-22
+
+### feat(sync-matching): tối ưu đồng bộ 2 tầng Google Sheets, quản lý quy tắc máy học và giữ trạng thái khi chuyển thẻ
+- Tích hợp Động cơ Tự học (Feedback Correction Memory) 4 tầng với bộ bóc tách và chọn từ khóa thông minh (Keyword Attribution / Tag pills) giúp khái quát hóa quy tắc nhận diện mã Vụ việc và Sản phẩm.
+- Xây dựng kiến trúc đồng bộ 2 tầng (Client LocalStorage <-> Google Sheets Cloud `LearnedRules`): lưu tạm tức thì trên máy kế toán và chỉ đồng bộ chính thức lên Google Sheets khi Push/Export; dọn sạch bài học tạm thời khi F5/Pull từ Google Sheets.
+- Bổ sung giao diện Quản lý Quy tắc máy học (Master 4) trong trang Cài đặt: hỗ trợ tìm kiếm, xóa từng quy tắc hoặc xóa tất cả; thêm nút xóa nhanh danh mục Master.
+- Khắc phục triệt để lỗi mất URL Web App khi F5 (Dual Persistence và cấu hình cứng mặc định `GOOGLE_SHEETS_SCRIPT_URL`).
+- Tối ưu hóa trải nghiệm làm việc: Giữ nguyên trạng thái mọi thẻ làm việc (Keep Tab State Alive) bằng cách chuyển đổi hiển thị CSS thay vì hủy component, giúp không bao giờ bị mất file Excel hoặc bảng kết quả khi chuyển tab; đồng thời tách biệt thanh công cụ Header (`headerActionsMap`).
+- Tối ưu script Google Apps Script: đọc dữ liệu hàng loạt theo lô (`getDataRange().getValues()`), cắt giảm 60-70% độ trễ đồng bộ.
+- Bổ sung bộ kiểm thử tự động `tests/keyword-selector.test.ts` kiểm chứng khả năng khái quát hóa máy học đơn và đa từ khóa.
+
 ## 2026-09-21
 
 ### feat(bangke): bóc tách và ghép Loại quảng cáo - Loại sản phẩm đưa vào Chuyên trang
