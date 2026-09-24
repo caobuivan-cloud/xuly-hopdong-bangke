@@ -127,7 +127,7 @@ export default function BangKeView({
   const [vvConfidenceRange, setVvConfidenceRange] = useState({ from: '', to: '' });
   const [viewMode, setViewMode] = useState<'training' | 'full'>('training');
   const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 15;
+  const [rowsPerPage, setRowsPerPage] = useState<number | 'all'>(15);
 
   const fileBangKe = useMemo(() => mergeUploadedFiles(fileBangKeList, 'Bảng kê chi tiết'), [fileBangKeList]);
   const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
@@ -1148,11 +1148,15 @@ export default function BangKeView({
 
   // Pagination offsets bounding
   const paginatedRows = useMemo(() => {
+    if (rowsPerPage === 'all') return filteredRows;
     const start = (currentPage - 1) * rowsPerPage;
     return filteredRows.slice(start, start + rowsPerPage);
-  }, [filteredRows, currentPage]);
+  }, [filteredRows, currentPage, rowsPerPage]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
+  const totalPages = useMemo(() => {
+    if (rowsPerPage === 'all' || filteredRows.length === 0) return 1;
+    return Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
+  }, [filteredRows.length, rowsPerPage]);
 
   // Compute live visual dashboard aggregates
   const stats = useMemo(() => {
@@ -1752,7 +1756,9 @@ export default function BangKeView({
                     </tr>
                   ) : (
                     paginatedRows.map((row, idx) => {
-                      const absoluteIndex = (currentPage - 1) * rowsPerPage + idx + 1;
+                      const absoluteIndex = rowsPerPage === 'all'
+                        ? idx + 1
+                        : (currentPage - 1) * rowsPerPage + idx + 1;
 
                       // Row state indicators
                       const isDateError = !row.ngayBatDau || !row.ngayKetThuc || !row.ngayHopDong;
@@ -2378,42 +2384,89 @@ export default function BangKeView({
             </div>
 
             {/* Pagination Controls Footer */}
-            {totalPages > 1 && (
-              <div className="px-4.5 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50 select-none">
-                <span className="text-[11px] font-medium text-slate-500">
-                  Hiển thị từ <strong className="text-slate-700 font-mono">{(currentPage - 1) * rowsPerPage + 1}</strong> đến{' '}
-                  <strong className="text-slate-700 font-mono">{Math.min(currentPage * rowsPerPage, filteredRows.length)}</strong> trong số{' '}
-                  <strong className="text-slate-700 font-mono">{filteredRows.length}</strong> dòng hạch toán
-                </span>
-                
-                <div className="flex items-center space-x-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="p-1 px-2 text-xs font-semibold rounded-md border border-slate-205 bg-white hover:bg-slate-55 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-                  {[...Array(totalPages)].map((_, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setCurrentPage(i + 1)}
-                      className={`px-2.5 py-1 text-xs font-bold rounded-md transition ${currentPage === i + 1 ? 'bg-indigo-600 text-white font-mono' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+            {filteredRows.length > 0 && (
+              <div className="px-4.5 py-3.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50 select-none">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[11px] font-medium text-slate-500">
+                    {rowsPerPage === 'all' ? (
+                      <>
+                        Hiển thị tất cả <strong className="text-slate-700 font-mono">{filteredRows.length}</strong> dòng hạch toán
+                      </>
+                    ) : (
+                      <>
+                        Hiển thị từ <strong className="text-slate-700 font-mono">{(currentPage - 1) * rowsPerPage + 1}</strong> đến{' '}
+                        <strong className="text-slate-700 font-mono">{Math.min(currentPage * rowsPerPage, filteredRows.length)}</strong> trong số{' '}
+                        <strong className="text-slate-700 font-mono">{filteredRows.length}</strong> dòng hạch toán
+                      </>
+                    )}
+                  </span>
+
+                  <div className="flex items-center space-x-2 text-xs text-slate-600">
+                    <span className="text-slate-300">|</span>
+                    <span className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Số dòng / trang:</span>
+                    <select
+                      value={rowsPerPage}
+                      onChange={(e) => {
+                        const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                        setRowsPerPage(val);
+                        setCurrentPage(1);
+                      }}
+                      className="bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm cursor-pointer"
+                      title="Chọn số lượng dòng hiển thị trên mỗi trang hoặc hiển thị tất cả"
                     >
-                      {i + 1}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="p-1 px-2 text-xs font-semibold rounded-md border border-slate-205 bg-white hover:bg-slate-55 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                  >
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
+                      <option value={15}>15 dòng (mặc định)</option>
+                      <option value={25}>25 dòng</option>
+                      <option value={50}>50 dòng</option>
+                      <option value={100}>100 dòng</option>
+                      <option value="all">Tất cả ({filteredRows.length} dòng)</option>
+                    </select>
+                  </div>
                 </div>
+                
+                {totalPages > 1 && (
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="p-1 px-2 text-xs font-semibold rounded-md border border-slate-205 bg-white hover:bg-slate-55 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      title="Trang trước"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, index) => {
+                      const pageNum = index + 1;
+                      const isSpanned = pageNum === 1 || pageNum === totalPages || Math.abs(pageNum - currentPage) <= 1;
+                      
+                      if (!isSpanned) {
+                        if (pageNum === 2 || pageNum === totalPages - 1) {
+                          return <span key={pageNum} className="text-xs text-slate-400 px-1 font-mono">...</span>;
+                        }
+                        return null;
+                      }
+
+                      return (
+                        <button
+                          key={pageNum}
+                          type="button"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`px-2.5 py-1 text-xs font-bold rounded-md transition ${currentPage === pageNum ? 'bg-indigo-600 text-white font-mono' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="p-1 px-2 text-xs font-semibold rounded-md border border-slate-205 bg-white hover:bg-slate-55 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      title="Trang sau"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
