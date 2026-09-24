@@ -108,7 +108,7 @@ export default function HopDongMoiView({
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('ALL');
   const [viewMode, setViewMode] = useState<'training' | 'full'>('training');
   const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 15;
+  const [rowsPerPage, setRowsPerPage] = useState<number | 'all'>(15);
 
   const fileMoi = useMemo(() => mergeUploadedFiles(fileMoiList, 'Hợp đồng mới'), [fileMoiList]);
   const fileFast = useMemo(() => mergeUploadedFiles(fileFastList, 'Danh sách hợp đồng Fast'), [fileFastList]);
@@ -867,11 +867,15 @@ export default function HopDongMoiView({
 
   // Pagination bounds
   const paginatedRows = useMemo(() => {
+    if (rowsPerPage === 'all') return filteredRows;
     const start = (currentPage - 1) * rowsPerPage;
     return filteredRows.slice(start, start + rowsPerPage);
-  }, [filteredRows, currentPage]);
+  }, [filteredRows, currentPage, rowsPerPage]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
+  const totalPages = useMemo(() => {
+    if (rowsPerPage === 'all' || filteredRows.length === 0) return 1;
+    return Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
+  }, [filteredRows.length, rowsPerPage]);
 
   // Compute stats on the current qualified list
   const stats = useMemo(() => {
@@ -1527,7 +1531,9 @@ export default function HopDongMoiView({
                     </tr>
                   ) : (
                     paginatedRows.map((row, idx) => {
-                      const absoluteIndex = (currentPage - 1) * rowsPerPage + idx + 1;
+                      const absoluteIndex = rowsPerPage === 'all'
+                        ? idx + 1
+                        : (currentPage - 1) * rowsPerPage + idx + 1;
 
                       // Diagnostic flags
                       const isMissingKhach = !row.maKhach || !row.maKhach.trim();
@@ -2105,27 +2111,60 @@ export default function HopDongMoiView({
 
             {/* Pagination controls */}
             {filteredRows.length > 0 && (
-              <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-150 flex items-center justify-between text-slate-500 font-sans">
-                <span className="text-xs font-semibold">
-                  Trang <strong className="text-slate-800">{currentPage}</strong> / <strong className="text-slate-800">{totalPages}</strong> (Tổng cộng <strong className="text-slate-800">{filteredRows.length}</strong> kết quả)
-                </span>
+              <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-150 flex flex-wrap items-center justify-between gap-3 text-slate-500 font-sans select-none">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-semibold">
+                    {rowsPerPage === 'all' ? (
+                      <>
+                        Hiển thị tất cả <strong className="text-slate-800">{filteredRows.length}</strong> kết quả
+                      </>
+                    ) : (
+                      <>
+                        Trang <strong className="text-slate-800">{currentPage}</strong> / <strong className="text-slate-800">{totalPages}</strong> (Tổng cộng <strong className="text-slate-800">{filteredRows.length}</strong> kết quả)
+                      </>
+                    )}
+                  </span>
 
-                <div className="flex items-center space-x-2.5">
-                  <button
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="p-1 px-2.5 bg-white border border-slate-205 rounded-lg text-xs font-semibold hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed select-none transition"
-                  >
-                    Trước
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-1 px-2.5 bg-white border border-slate-205 rounded-lg text-xs font-semibold hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed select-none transition"
-                  >
-                    Sau
-                  </button>
+                  <div className="flex items-center space-x-2 text-xs text-slate-600">
+                    <span className="text-slate-300">|</span>
+                    <span className="font-medium text-slate-500 whitespace-nowrap">Số dòng / trang:</span>
+                    <select
+                      value={rowsPerPage}
+                      onChange={(e) => {
+                        const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                        setRowsPerPage(val);
+                        setCurrentPage(1);
+                      }}
+                      className="bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm cursor-pointer"
+                      title="Chọn số lượng dòng hiển thị trên mỗi trang hoặc hiển thị tất cả"
+                    >
+                      <option value={15}>15 dòng (mặc định)</option>
+                      <option value={25}>25 dòng</option>
+                      <option value={50}>50 dòng</option>
+                      <option value={100}>100 dòng</option>
+                      <option value="all">Tất cả ({filteredRows.length} dòng)</option>
+                    </select>
+                  </div>
                 </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center space-x-2.5">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="p-1 px-2.5 bg-white border border-slate-205 rounded-lg text-xs font-semibold hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed select-none transition"
+                    >
+                      Trước
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-1 px-2.5 bg-white border border-slate-205 rounded-lg text-xs font-semibold hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed select-none transition"
+                    >
+                      Sau
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
