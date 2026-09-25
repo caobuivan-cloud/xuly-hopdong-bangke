@@ -1010,15 +1010,43 @@ export function cleanBookingCode(rawBooking: any): string {
 }
 
 /**
- * Xây dựng Ghi chú chi tiết an toàn, không nhân đôi /AD/AD nếu soHt đã kết thúc bằng /AD.
+ * Xây dựng Ghi chú chi tiết an toàn, không nhân đôi nếu soHt đã kết thúc bằng separator + suffix.
+ * Theo yêu cầu: Số HT (Cột C) thêm hậu tố (mặc định là /AD) với dấu ngăn cách mặc định là / và hậu tố là AD.
  */
-export function buildGhiChuChiTietIdempotent(soHt: any, separator: string = '-', suffix: string = '/AD'): string {
+export function buildGhiChuChiTietIdempotent(
+  soHt: any,
+  separator: string = '/',
+  suffix: string = 'AD'
+): string {
   const cleanHt = String(soHt ?? '').trim();
   if (!cleanHt) return '';
-  if (cleanHt.toLowerCase().endsWith(suffix.toLowerCase())) {
+
+  const cleanSep = separator !== undefined && separator !== null ? String(separator) : '/';
+  const cleanSuffix = (suffix !== undefined && suffix !== null ? String(suffix) : 'AD').trim();
+
+  // Xác định chuỗi hậu tố đầy đủ cần thêm (ví dụ "/" + "AD" = "/AD")
+  // Nếu cleanSuffix đã bắt đầu bằng cleanSep, không lặp lại dấu ngăn cách
+  let targetEnding = cleanSuffix;
+  if (cleanSep && !cleanSuffix.startsWith(cleanSep)) {
+    targetEnding = `${cleanSep}${cleanSuffix}`;
+  }
+
+  // Trường hợp không có hậu tố nào
+  if (!targetEnding) {
     return cleanHt;
   }
-  return `${cleanHt}${suffix}`;
+
+  // Kiểm tra idempotent: nếu cleanHt đã kết thúc bằng targetEnding
+  if (cleanHt.toLowerCase().endsWith(targetEnding.toLowerCase())) {
+    return cleanHt;
+  }
+
+  // Nếu cleanHt đã kết thúc bằng cleanSep (ví dụ 'HT123/') và cleanSuffix không bắt đầu bằng cleanSep
+  if (cleanSep && cleanHt.endsWith(cleanSep) && !cleanSuffix.startsWith(cleanSep)) {
+    return `${cleanHt}${cleanSuffix}`;
+  }
+
+  return `${cleanHt}${targetEnding}`;
 }
 
 /**

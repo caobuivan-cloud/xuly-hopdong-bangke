@@ -716,7 +716,7 @@ export default function BangKeView({
             const tyLeCk = chietKhau;
 
             // Chuyên trang — Ưu tiên exception rules, sau đó đến normalized.chuyenTrang, hoặc bóc tách Loại qc - Loại sp từ diễn giải gốc
-            let exceptionText = applyExceptionRules(textToLookup, config.exceptionRules);
+            let exceptionText = applyExceptionRules(textToLookup, config.exceptionRules) || applyExceptionRules(noiDungQuangCao, config.exceptionRules);
             const extractedDetail = extractSunContentDetail(rawNoidung);
             const chuyenTrang = sanitizeNewlinesToDash(exceptionText || normalized.chuyenTrang || extractedDetail || noiDungQuangCao || '');
 
@@ -918,6 +918,14 @@ export default function BangKeView({
         newRow.maKhach = fastMaKhach || '';
         newRow.boPhanThucHien = fastBoPhanThucHien || '';
         newRow.fastGhiChu = fastGhiChu || '';
+      }
+
+      if (field === 'soHt') {
+        const suffix = config.contractSuffix || 'AD';
+        const separator = config.contractNameSeparator !== undefined ? config.contractNameSeparator : '/';
+        const cleanHt = String(value || '').trim();
+        newRow.soHt = cleanHt;
+        newRow.ghiChuChiTiet = cleanHt ? buildGhiChuChiTietIdempotent(cleanHt, separator, suffix) : '';
       }
 
       return newRow;
