@@ -79,7 +79,15 @@ const res2 = buildGhiChuChiTietIdempotent(htWithoutAd);
 if (res2 !== 'HT0060126/AD') {
   throw new Error(`buildGhiChuChiTietIdempotent lỗi không nối: ${res2}`);
 }
-console.log('✅ Passed: Suffix /AD bảo đảm idempotent');
+const res3 = buildGhiChuChiTietIdempotent('A02NPP0020226', '/', 'AD');
+if (res3 !== 'A02NPP0020226/AD') {
+  throw new Error(`buildGhiChuChiTietIdempotent lỗi với separator '/' và suffix 'AD': ${res3}`);
+}
+const res4 = buildGhiChuChiTietIdempotent('A02NPP0020226/AD', '/', 'AD');
+if (res4 !== 'A02NPP0020226/AD') {
+  throw new Error(`buildGhiChuChiTietIdempotent lỗi idempotent với separator '/' và suffix 'AD': ${res4}`);
+}
+console.log('✅ Passed: Suffix /AD bảo đảm idempotent và nối đúng separator');
 
 // 4. Test đọc 3 workbook thật trong thư mục Form/
 console.log('\n[TEST 4] Kiểm thử nạp 3 file workbook thật:');

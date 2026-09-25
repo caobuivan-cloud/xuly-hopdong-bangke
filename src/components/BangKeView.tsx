@@ -16,6 +16,7 @@ import {
 } from '../types';
 import ExcelUpload from './ExcelUpload';
 import { exportToExcel } from '../utils/excel';
+import { fillBangKeVerticalMerges, selectBangKeDetailRows } from '../utils/bangKeRows';
 import { buildFastImportRows, filterFastImportEligibleRows } from '../utils/fastImport';
 import { 
   normalizeText, lookupExact, keywordMatch, matchProductAdvanced, DEFAULT_INTERNAL_SITES,
@@ -425,137 +426,20 @@ export default function BangKeView({
             }
           });
 
-          // 2. Unmerge & forward-fill data for vertical merges (except booking column)
+          // 2. Điền ô gộp dọc, kể cả mã booking, trước khi kiểm tra dòng kết thúc.
           const merges = sheetBangKe.merges || [];
           const headerIndex = sheetBangKe.headerRowIndex ?? 0;
-          const rawHeaders = Array.isArray(sheetBangKe.rawArray?.[headerIndex]) 
-            ? sheetBangKe.rawArray[headerIndex] 
-            : (sheetBangKe.headers || []);
+          const rawHeaders = Array.isArray(sheetBangKe.rawArray?.[headerIndex])
+            ? sheetBangKe.rawArray[headerIndex]
+            : sheetBangKe.headers;
+          const preparedRows = fillBangKeVerticalMerges(
+            sheetBangKe.rows, merges, headerIndex, rawHeaders
+          );
 
-          // Identify booking column indices to never forward-fill booking
-          const bookingColIndices = new Set<number>();
-          rawHeaders.forEach((h: any, colIdx: number) => {
-            const norm = normalizeText(h);
-            if (['ma booking', 'booking', 'so booking', 'ma book', 'hop dong'].some(k => norm.includes(k))) {
-              bookingColIndices.add(colIdx);
-            }
-          });
-          bookingColIndices.add(1); // Standard Column B is Ma booking
-
-          // Clone rows to avoid direct mutation of sheet data while filling values
-          const preparedRows = sheetBangKe.rows.map(r => ({
-            ...r,
-            __cells: Array.isArray(r.__cells) ? [...r.__cells] : []
-          }));
-
-          merges.forEach((m: any) => {
-            if (m.e.r > m.s.r) {
-              for (let c = m.s.c; c <= m.e.c; c++) {
-                if (bookingColIndices.has(c)) continue; // Do NOT forward-fill booking code
-
-                const topRowIndex = m.s.r - (headerIndex + 1);
-                if (topRowIndex < 0 || topRowIndex >= preparedRows.length) continue;
-
-                const topRow = preparedRows[topRowIndex];
-                const headerKey = rawHeaders[c] || Object.keys(topRow).find(k => !k.startsWith('__') && topRow[k] !== undefined);
-                const topVal = (topRow.__cells && topRow.__cells[c] !== undefined && topRow.__cells[c] !== '')
-                  ? topRow.__cells[c]
-                  : (headerKey ? topRow[headerKey] : '');
-
-                if (topVal !== undefined && topVal !== null && String(topVal).trim() !== '') {
-                  for (let r = m.s.r + 1; r <= m.e.r; r++) {
-                    const targetRowIdx = r - (headerIndex + 1);
-                    if (targetRowIdx >= 0 && targetRowIdx < preparedRows.length) {
-                      const targetRow = preparedRows[targetRowIdx];
-                      if (targetRow.__cells) {
-                        targetRow.__cells[c] = topVal;
-                      }
-                      if (headerKey) {
-                        targetRow[headerKey] = topVal;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          });
-
-          // 3. Lọc dòng đến dòng Tổng
-          const filteredRowsForTable: any[] = [];
-          const isSequenceNumber = (val: any): boolean => {
-            if (val === null || val === undefined) return false;
-            const s = String(val).trim();
-            if (s === '') return false;
-            return /^\d+(\.0+)?$/.test(s);
-          };
-
-          for (let i = 0; i < preparedRows.length; i++) {
-            const row = preparedRows[i];
-            const rIdx = headerIndex + 1 + i;
-
-            const hasHorizontalMerge = merges.some((m: any) => 
-              rIdx >= m.s.r && rIdx <= m.e.r && m.s.c === 0 && m.e.c >= 2
-            );
-            if (hasHorizontalMerge) break;
-
-            const colAValue = (row.__cells && row.__cells.length > 0) ? row.__cells[0] : '';
-            const sttValue = getCellValue(row, 'STT', 'stt', 'No').trim();
-
-            const isColANum = isSequenceNumber(colAValue);
-            const isSttNum = isSequenceNumber(sttValue);
-
-            if (!isColANum && !isSttNum) break;
-
-            const normalizedVal = normalizeText(sttValue);
-            let isTotalRow = false;
-            if (
-              normalizedVal === 'tong' ||
-              normalizedVal === 'tong cong' ||
-              normalizedVal === 'cong' ||
-              normalizedVal === 'tong thanh tien' ||
-              normalizedVal === 'tong cong thanh tien' ||
-              normalizedVal === 'tong tien' ||
-              normalizedVal === 'tong so tien' ||
-              normalizedVal === 'tong gia tri' ||
-              normalizedVal === 'tong thanh toan' ||
-              normalizedVal === 'tong cong thanh toan' ||
-              normalizedVal === 'cong thanh tien' ||
-              normalizedVal === 'thanh tien' ||
-              normalizedVal === 'cong cong' ||
-              normalizedVal.startsWith('tong thanh tien') ||
-              normalizedVal.startsWith('tong cong') ||
-              normalizedVal.startsWith('tong tien') ||
-              normalizedVal.startsWith('tong so tien') ||
-              normalizedVal.startsWith('tong gia tri') ||
-              normalizedVal.startsWith('tong thanh toan') ||
-              normalizedVal.startsWith('tong cong thanh toan') ||
-              normalizedVal === 'to ng' ||
-              normalizedVal === 'to ng co ng' ||
-              normalizedVal === 'co ng' ||
-              normalizedVal === 'to ng tha nh tie n' ||
-              normalizedVal === 'to ng co ng tha nh tie n' ||
-              normalizedVal === 'to ng tie n' ||
-              normalizedVal === 'to ng so tie n' ||
-              normalizedVal === 'to ng gia tri' ||
-              normalizedVal === 'to ng tha nh toan' ||
-              normalizedVal === 'to ng co ng tha nh toan' ||
-              normalizedVal === 'co ng tha nh tie n' ||
-              normalizedVal === 'tha nh tie n' ||
-              normalizedVal === 'co ng co ng' ||
-              normalizedVal.startsWith('to ng tha nh tie n') ||
-              normalizedVal.startsWith('to ng co ng') ||
-              normalizedVal.startsWith('to ng tie n') ||
-              normalizedVal.startsWith('to ng so tie n') ||
-              normalizedVal.startsWith('to ng gia tri') ||
-              normalizedVal.startsWith('to ng tha nh toan') ||
-              normalizedVal.startsWith('to ng co ng tha nh toan')
-            ) {
-              isTotalRow = true;
-            }
-
-            if (isTotalRow) break;
-            filteredRowsForTable.push(row);
-          }
+          // 3. Nhận diện dữ liệu bằng cột B, dừng khi ô gộp ngang phủ A–C.
+          const filteredRowsForTable = selectBangKeDetailRows(
+            preparedRows, merges, headerIndex, rawHeaders[1]
+          );
 
           // Auto Data Pattern Sampling cho lịch đăng nếu cần
           let autoDetectedLichDangKey: string | null = null;
@@ -716,7 +600,7 @@ export default function BangKeView({
             const tyLeCk = chietKhau;
 
             // Chuyên trang — Ưu tiên exception rules, sau đó đến normalized.chuyenTrang, hoặc bóc tách Loại qc - Loại sp từ diễn giải gốc
-            let exceptionText = applyExceptionRules(textToLookup, config.exceptionRules);
+            let exceptionText = applyExceptionRules(textToLookup, config.exceptionRules) || applyExceptionRules(noiDungQuangCao, config.exceptionRules);
             const extractedDetail = extractSunContentDetail(rawNoidung);
             const chuyenTrang = sanitizeNewlinesToDash(exceptionText || normalized.chuyenTrang || extractedDetail || noiDungQuangCao || '');
 
@@ -918,6 +802,14 @@ export default function BangKeView({
         newRow.maKhach = fastMaKhach || '';
         newRow.boPhanThucHien = fastBoPhanThucHien || '';
         newRow.fastGhiChu = fastGhiChu || '';
+      }
+
+      if (field === 'soHt') {
+        const suffix = config.contractSuffix || 'AD';
+        const separator = config.contractNameSeparator !== undefined ? config.contractNameSeparator : '/';
+        const cleanHt = String(value || '').trim();
+        newRow.soHt = cleanHt;
+        newRow.ghiChuChiTiet = cleanHt ? buildGhiChuChiTietIdempotent(cleanHt, separator, suffix) : '';
       }
 
       return newRow;

@@ -65,11 +65,11 @@ const standardTemplate: BangKeTemplateHandler = {
     const cleanBooking = cleanBookingCode(rawBooking);
     const rawSoHt = rawRow['Số HT'] || rawRow['So HT'] || rawRow['HT'] || '';
     const cleanSoHt = String(rawSoHt).trim();
-    const rawChuyenTrang = String(rawRow['Chuyên trang'] || rawRow['chuyenTrang'] || rawRow['Nhãn'] || '').trim();
+    const rawChuyenTrang = String(rawRow['Chuyên trang'] || rawRow['chuyenTrang'] || '').trim();
     const rawNoiDung = String(rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || rawRow['noiDung'] || '');
     const sunDetail = extractSunContentDetail(rawNoiDung);
     const noiDung = sanitizeNewlinesToDash(rawNoiDung);
-    const chuyenTrang = rawChuyenTrang || sunDetail;
+    const chuyenTrang = rawChuyenTrang || sunDetail || noiDung;
 
     return {
       stt: rawRow['STT'] || rawRow['stt'],
@@ -171,8 +171,8 @@ const mmsTemplate: BangKeTemplateHandler = {
     const rawNoiDung = rawRow['Nội dung quảng cáo'] || rawRow['Nội dung'] || '';
     const sunDetail = extractSunContentDetail(rawNoiDung);
     const noiDung = sanitizeNewlinesToDash(rawNoiDung);
-    // Ưu tiên cột Chuyên trang riêng nếu có; nếu không có thì dùng sunDetail/noiDung; Nhãn chỉ dùng fallback cuối cùng
-    const chuyenTrang = rawChuyenTrang || sunDetail || noiDung || rawNhan;
+    // Ưu tiên cột Chuyên trang riêng nếu có; nếu không có thì dùng sunDetail/noiDung
+    const chuyenTrang = rawChuyenTrang || sunDetail || noiDung;
 
     return {
       stt: rawRow['STT'] || rawRow['stt'],
