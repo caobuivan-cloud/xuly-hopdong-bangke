@@ -222,19 +222,26 @@ const sunTemplate: BangKeTemplateHandler = {
 
     // Lớp 2: Kiểm tra header
     const headers = sheet.headers.map(normalizeText);
-    const hasMaBook = headers.some(h => h === 'ma book' || h.includes('ma book'));
-    const hasNoiDungQc = headers.some(h => h.includes('noi dung quang cao') || h.includes('noi dung'));
+    const hasMaBook = headers.some(h => h === 'ma book');
+    const noiDungQcKey = sheet.headers.find(h => normalizeText(h) === 'noi dung quang cao');
+    const hasNoiDungQc = noiDungQcKey !== undefined;
     const hasSoHt = headers.some(h => h === 'so ht' || h.includes('so ht'));
 
     if (hasMaBook) score += 35;
     if (hasNoiDungQc) score += 15;
     if (hasSoHt) score += 15;
 
-    // Lớp 3: Data sampling (Nội dung có chứa "Loại quảng cáo :" hoặc Số HT có ngoặc đơn)
+    // Bắt buộc có "Loại quảng cáo:" trong đúng cột Nội dung quảng cáo của dòng mẫu;
+    // tên SUN, các cột phổ biến hoặc nội dung ở cột khác không đủ để nhận diện SUN.
+    const sample = sheet.rows?.[0];
+    const hasSunContentType = hasNoiDungQc && sample !== undefined
+      && /loại\s*quảng\s*cáo\s*:/i.test(String(sample[noiDungQcKey] ?? ''));
+    if (!hasSunContentType) return { matched: false, score };
+
+    // Lớp 3: Data sampling
     if (sheet.rows && sheet.rows.length > 0) {
       const sample = sheet.rows[0];
       const sampleValues = Object.values(sample).map(v => String(v));
-      const hasSunContentType = sampleValues.some(v => /loại\s*quảng\s*cáo\s*:/i.test(v));
       const hasParenthesesTail = sampleValues.some(v => /\([0-9a-zA-Z\s/-]+\)$/.test(v.trim()));
       if (hasSunContentType) score += 20;
       if (hasParenthesesTail) score += 15;
