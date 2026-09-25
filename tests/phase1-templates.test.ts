@@ -22,6 +22,31 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const formDir = path.resolve(__dirname, '../Form');
 
+// SUN phải có dấu hiệu riêng trong đúng cột, kể cả khi metadata đã đủ điểm.
+const sunDetector = getBangKeTemplateHandler('SUN').detector;
+function sunFixture(booking: string, contentHeader: string, content: string, metadata = '') {
+  return {
+    sheetName: 'Bảng kê',
+    headers: [booking, 'Số HT', contentHeader, 'Ghi chú'],
+    rows: [{ [booking]: 'QC01', 'Số HT': 'HT01', [contentHeader]: content, 'Ghi chú': 'Loại quảng cáo: PR' }],
+    rawArray: [[metadata]],
+    headerRowIndex: 1,
+  };
+}
+const sunDetectionCases = [
+  { name: 'Mã book và nội dung SUN hợp lệ', sheet: sunFixture('Mã book', 'Nội dung quảng cáo', 'Loại quảng cáo : PR'), expected: true },
+  { name: 'Mã booking không được cộng điểm Mã book', sheet: sunFixture('Mã booking', 'Nội dung quảng cáo', 'Loại quảng cáo: PR'), expected: false },
+  { name: 'Thiếu Loại quảng cáo dù metadata SUN', sheet: sunFixture('Mã book', 'Nội dung quảng cáo', 'Đăng bài PR', 'SUN'), expected: false },
+  { name: 'Loại quảng cáo chỉ ở Ghi chú', sheet: sunFixture('Mã book', 'Nội dung quảng cáo', '', 'SUN'), expected: false },
+  { name: 'Cột Nội dung không thay thế Nội dung quảng cáo', sheet: sunFixture('Mã book', 'Nội dung', 'Loại quảng cáo: PR', 'SUN'), expected: false },
+  { name: 'Tên cột chứa thêm chữ không khớp', sheet: sunFixture('Mã book', 'Nội dung quảng cáo khác', 'Loại quảng cáo: PR', 'SUN'), expected: false },
+  { name: 'Chấp nhận bỏ dấu và khoảng trắng ngoài tên cột', sheet: sunFixture(' Ma book ', ' Noi dung quang cao ', 'LOẠI  QUẢNG CÁO : PR'), expected: true },
+];
+for (const item of sunDetectionCases) {
+  if (sunDetector(item.sheet).matched !== item.expected) throw new Error(`SUN: ${item.name}`);
+}
+console.log('✅ Passed: Điều kiện bắt buộc và phân biệt tên cột SUN');
+
 // 1. Test helper parseOptionalNumber với các trường hợp sentinel (EFR-11)
 console.log('\n[TEST 1] Kiểm thử parseOptionalNumber:');
 const nullCases = [undefined, null, '', '   ', 'abc', 'N/A'];
@@ -92,10 +117,12 @@ console.log('✅ Passed: Suffix /AD bảo đảm idempotent và nối đúng sep
 // 4. Test đọc 3 workbook thật trong thư mục Form/
 console.log('\n[TEST 4] Kiểm thử nạp 3 file workbook thật:');
 const filesToTest = [
+  { dir: path.resolve(__dirname, '../File test'), fileName: 'Bảng kê Bảo sinh T09.2026 A02NPP0020226.xlsx', expectedTemplate: 'STANDARD' },
   { dir: formDir, fileName: 'BK Mẫu MMS. Hương Hiền.xlsx', expectedTemplate: 'MMS' },
   { dir: formDir, fileName: 'BK Mẫu SUN.Hương Hiền.xlsx', expectedTemplate: 'SUN' },
   { dir: formDir, fileName: 'Mẫu BK WPP.Hương Hiền.xlsx', expectedTemplate: 'WPP' },
-  { dir: path.resolve(__dirname, '../File test'), fileName: 'Bảng kê so 2_ PR_SunGroup- HT0080126-Thang 08.2026 (4).xlsx', expectedTemplate: 'SUN' },
+  // Tên SunGroup không đủ: dòng mẫu thiếu dấu hiệu bắt buộc "Loại quảng cáo:".
+  { dir: path.resolve(__dirname, '../File test'), fileName: 'Bảng kê so 2_ PR_SunGroup- HT0080126-Thang 08.2026 (4).xlsx', expectedTemplate: 'STANDARD' },
 ];
 
 for (const item of filesToTest) {
